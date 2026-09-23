@@ -25,18 +25,11 @@ local function Cheaper(a, b)
 end
 
 --- What BagWarden would do next, and why everything else stays.
---- Returns { action = "merge"|"delete"|"confirm"|nil, ... , kept = { {item, reason}, ... } }.
+--- Returns { action = "delete"|"confirm"|nil, ... , kept = { {item, reason}, ... } }.
+--- Merging part-stacks isn't ours to do: Blizzard's sort button, right next to ours, already does it.
 function BW.Plan(items)
     items = items or BW.items or {}
     local plan = { free = BW.FreeSlots(), total = BW.TotalSlots(), kept = {}, candidates = {} }
-
-    -- 0. Merging partial stacks frees a slot at no cost, so it always comes first.
-    local merge = BW.FindMerge(items)
-    if merge then
-        plan.action = "merge"
-        plan.merge = merge
-        plan.label = string.format("merge %s (%d + %d)", merge.name or "?", merge.from.count, merge.to.count)
-    end
 
     local greys, whites = {}, {}
     for _, item in ipairs(items) do
@@ -62,13 +55,13 @@ function BW.Plan(items)
     for _, entry in ipairs(whites) do plan.candidates[#plan.candidates + 1] = entry end
 
     local next_ = plan.candidates[1]
-    if next_ and not plan.action then
+    if next_ then
         plan.action = next_.confirm and "confirm" or "delete"
         plan.target = next_
         plan.label = string.format("%dx %s - %s", next_.item.count, next_.item.name or "?", BW.Money(next_.value))
-    elseif next_ then
-        plan.target = next_        -- shown in the tooltip as what comes after the merge
     end
+    -- Whether any two part-stacks could still be joined, for the tooltip's one-line tip.
+    plan.couldMerge = BW.HasPartialStacks(items)
     return plan
 end
 

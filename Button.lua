@@ -3,10 +3,14 @@
 local ADDON, BW = ...
 local LIB = LibStub("LibForever-1.0")
 
--- Deleting is not switched on yet: the client's DeleteCursorItem is flagged HasRestrictions, and we
--- are waiting for the in-game test that shows whether it works inside a click. Until then the button
--- merges stacks and reports what it WOULD delete, so nothing can be lost while we build.
-BW.deleteEnabled = false
+-- Deleting works ONLY inside a real click or keypress. DeleteCursorItem is a hardware-event
+-- function: from a slash command, a timer or any other code of ours it silently does nothing, and
+-- C_Item.DeleteItem is protected outright (ADDON_ACTION_BLOCKED). Verified in game 2026-09-23: the
+-- bag button's own OnClick deletes; /run in chat does not.
+-- So never move a delete into a timer, a C_Timer.After, an event handler or a "do the rest of them"
+-- loop. It would quietly stop working, which is also exactly the behaviour we want anyway: one
+-- deliberate click, one item.
+BW.deleteEnabled = true
 
 local button
 
@@ -26,6 +30,7 @@ end
 --- A few short lines: what BagWarden is, how full the bags are, and what one click does.
 --- Everything else (what's protected, what has been deleted) lives on the settings page.
 function BW.FillTooltip(tooltip)
+    if BW.planStale then BW.PlanNow() end
     local plan = BW.plan
     tooltip:AddLine("BagWarden")
     if not plan then
@@ -36,11 +41,7 @@ function BW.FillTooltip(tooltip)
     tooltip:AddLine(string.format("Bags: %d free of %d", plan.free, plan.total), 0.8, 0.8, 0.8)
 
     local click
-    if plan.action == "merge" and plan.merge then
-        local link = plan.merge.from.link or plan.merge.from.name or "?"
-        tooltip:AddLine(string.format("Merge %s stacks - frees 1 slot", link), 0.3, 1, 0.3)
-        click = "Left-click: merge"
-    elseif plan.target then
+    if plan.target then
         local target = plan.target
         local link = target.item.link or target.item.name or "?"
         tooltip:AddLine(string.format("Delete %s - %s", link, BW.Coin(target.value or 0)), 1, 0.82, 0)
@@ -52,6 +53,10 @@ function BW.FillTooltip(tooltip)
     if not BW.deleteEnabled then
         tooltip:AddLine("Test build: deletes nothing yet.", 1, 0.4, 0.4)
     end
+    -- Joining part-stacks is the sort button's job, not ours.
+    if plan.couldMerge then
+        tooltip:AddLine("Tip: the sort button merges part-stacks.", 0.6, 0.6, 0.6)
+    end
     if click then
         tooltip:AddLine(click, 0.6, 0.6, 0.6)
         tooltip:AddLine("Right-click: never delete this item", 0.6, 0.6, 0.6)
@@ -62,16 +67,12 @@ end
 -- ---------------------------------------------------------------------------
 -- The click
 -- ---------------------------------------------------------------------------
---- What one click does. In this build: merge when possible, otherwise report.
-function BW.ReportPlan()
-    BW.items = BW.ScanBags()
-    BW.plan = BW.Plan(BW.items)
-    local plan = BW.plan
+--- What one click does. `fromHardware` is true when we're inside the player's own click or
+--- keypress, which is the only context the client lets an addon delete in.
+function BW.ReportPlan(fromHardware)
+    -- Always work from a scan taken now, never from whatever the last bag update left behind.
+    local plan = BW.PlanNow()
 
-    if plan.action == "merge" then
-        if BW.DoMerge(plan.merge) then BW.Print("merged %s. %d slots free.", plan.merge.name or "?", BW.FreeSlots()) end
-        return
-    end
     if not plan.target then
         BW.Print("nothing to free: everything in your bags is worth keeping.")
         return
@@ -82,11 +83,18 @@ function BW.ReportPlan()
         BW.Print("deleting is off in this test build. Nothing was touched.")
         return
     end
-    BW.Print("deleting isn't wired up yet.")
+    if plan.action == "confirm" then
+        -- The popup's own Delete button is the player's click, so the deletion happens there.
+        BW.AskThenDelete(plan.target)
+        return
+    end
+    -- One click, one stack. DeleteStack verifies the slot again and refuses if anything moved.
+    BW.DeleteStack(plan.target, fromHardware)
 end
 
 local function OnClick(_, mouse)
     if mouse == "RightButton" then
+        if BW.planStale then BW.PlanNow() end
         local target = BW.plan and BW.plan.target
         if target then
             BW.SetIgnored(target.item.itemID, true)
@@ -96,7 +104,13 @@ local function OnClick(_, mouse)
         end
         return
     end
-    BW.ReportPlan()
+    -- Inside the button's OnClick: a real hardware event, which is what deleting needs.
+    BW.ReportPlan(true)
+end
+
+--- The keybinding (Bindings.xml). A keypress is a hardware event too.
+function BW.FreeSlotFromBinding()
+    BW.ReportPlan(true)
 end
 
 -- ---------------------------------------------------------------------------
@@ -120,6 +134,11 @@ local function Host()
         if frame and frame.IsShown and frame:IsShown() then return frame end
     end
     return nil
+end
+
+--- Is any bag window open? While none is, BagWarden doesn't scan at all.
+function BW.BagsOpen()
+    return Host() ~= nil
 end
 
 --- We sit just left of the bag's search box, in the same row. When there is no search box (another
@@ -323,9 +342,8 @@ end
 -- /bagw test - one line per protection layer, so a change can be checked in game
 -- ---------------------------------------------------------------------------
 function BW.SmokeTest()
-    BW.items = BW.ScanBags()
     BW.ScanQuestLog()
-    BW.plan = BW.Plan(BW.items)
+    BW.PlanNow()
 
     BW.Print("bags: %d stacks, %d of %d slots free", #BW.items, BW.FreeSlots(), BW.TotalSlots())
 
@@ -346,9 +364,6 @@ function BW.SmokeTest()
         else free = free + 1 end
     end
     BW.Print("protection: %d kept, %d ask first, %d deletable", hard, soft, free)
-
-    local merge = BW.FindMerge(BW.items)
-    BW.Print("merge: %s", merge and string.format("%s (%d + %d)", merge.name, merge.from.count, merge.to.count) or "nothing to merge")
 
     if BW.plan.target then
         BW.Print("next: %s [%s]", BW.Describe(BW.plan.target), BW.plan.action)

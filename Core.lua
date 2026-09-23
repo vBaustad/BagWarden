@@ -110,23 +110,44 @@ function BW.LogDeletion(item, value)
     for i = #BW.db.log, BW.LOG_MAX + 1, -1 do table.remove(BW.db.log, i) end
 end
 
+--- Take the newest line back off the log, for a delete that turned out not to happen.
+function BW.UnlogLastDeletion()
+    if BW.db and BW.db.log then table.remove(BW.db.log, 1) end
+end
+
 -- ---------------------------------------------------------------------------
 -- Events
 -- ---------------------------------------------------------------------------
---- Rescan the bags and redraw the button. Debounced: bag updates arrive in bursts.
+--- Rescan the bags and redraw the button. Debounced, because bag updates arrive in bursts, and
+--- skipped entirely while no bag window is open: nothing on screen depends on the plan then, and
+--- whoever needs one (a tooltip, a click) asks for it with BW.PlanNow.
 function BW.Refresh()
     LIB.Debounce("BagWarden.refresh", 0.2, function()
-        BW.items = BW.ScanBags()
-        BW.UpdateLootClock(BW.items)
-        BW.plan = BW.Plan(BW.items)
-        if BW.UpdateButton then BW.UpdateButton() end
+        if not (BW.BagsOpen and BW.BagsOpen()) then
+            BW.planStale = true
+            if BW.UpdateButton then BW.UpdateButton() end
+            return
+        end
+        BW.PlanNow()
     end)
+end
+
+--- Scan and plan right now, whatever is on screen. Every reader of BW.plan that must be current
+--- calls this: the click paths and the tooltips.
+function BW.PlanNow()
+    BW.items = BW.ScanBags()
+    BW.UpdateLootClock(BW.items)
+    BW.plan = BW.Plan(BW.items)
+    BW.planStale = false
+    if BW.UpdateButton then BW.UpdateButton() end
+    return BW.plan
 end
 
 local f = CreateFrame("Frame")
 f:RegisterEvent("ADDON_LOADED")
 f:RegisterEvent("PLAYER_LOGIN")
 f:RegisterEvent("BAG_UPDATE_DELAYED")
+f:RegisterEvent("GET_ITEM_INFO_RECEIVED")
 f:RegisterEvent("QUEST_LOG_UPDATE")
 f:RegisterEvent("QUEST_ACCEPTED")
 f:RegisterEvent("QUEST_REMOVED")
@@ -141,8 +162,14 @@ f:SetScript("OnEvent", function(_, event, arg1)
     elseif event == "PLAYER_LOGIN" then
         BW.RegisterOptions()
         BW.RegisterMinimap()
+        BW.RegisterWelcome()
         BW.Refresh()
     elseif event == "BAG_UPDATE_DELAYED" then
+        BW.Refresh()
+    elseif event == "GET_ITEM_INFO_RECEIVED" then
+        -- The client has just filled in an item we couldn't judge: drop what we cached for it and
+        -- look again, so "still loading" doesn't stick.
+        BW.ForgetItemInfo(arg1)
         BW.Refresh()
     elseif event == "QUEST_LOG_UPDATE" or event == "QUEST_ACCEPTED" or event == "QUEST_REMOVED" then
         BW.ScanQuestLog()
@@ -169,14 +196,53 @@ SlashCmdList.BAGWARDEN = function(msg)
         BW.Print("debug %s", BW.db.debug and "on" or "off")
     elseif msg == "settings" or msg == "options" then
         BW.OpenOptions()
+    elseif msg == "free" then
+        -- Merging works from chat, deleting does not: the client only allows that inside a real
+        -- click or keypress. DeleteStack says so rather than failing silently.
+        BW.ReportPlan(false)
     else
-        BW.ReportPlan()
+        BW.OnLauncherClick("LeftButton")
     end
 end
 
---- The one click BagWarden has: left = do the next thing, right = settings.
+-- The keybinding (Bindings.xml). A keypress is a hardware event, so this one CAN delete, unlike
+-- /bagw free typed in chat.
+BINDING_HEADER_BAGWARDEN = "BagWarden"
+BINDING_NAME_BAGWARDEN_FREE_SLOT = "Free a bag slot"
+
+function BagWardenFreeSlot()
+    BW.ReportPlan(true)
+end
+
+--- Away from the bags, nothing is ever deleted: the minimap button, the launcher notch and the
+--- addon compartment only open things. Deleting lives on the bag frame's own button, where you can
+--- see what's in your bags. Left opens the bags (the addon's "window"), right opens the settings.
 function BW.OnLauncherClick(mouse)
-    if mouse == "RightButton" then BW.OpenOptions() else BW.ReportPlan() end
+    if mouse == "RightButton" then BW.OpenOptions() else BW.OpenBags(true) end
+end
+
+--- Show the bags. `toggle` closes them again on a second click, which is what a minimap button
+--- should do; the welcome card only ever opens them.
+function BW.OpenBags(toggle)
+    if toggle and type(ToggleAllBags) == "function" then
+        ToggleAllBags()
+    elseif type(OpenAllBags) == "function" then
+        OpenAllBags()
+    elseif type(ToggleAllBags) == "function" then
+        ToggleAllBags()
+    else
+        BW.OpenOptions()
+    end
+end
+
+--- What the minimap button, the notch and the compartment say. The bag button has its own tooltip
+--- with the next action; these only open things, so they say so.
+function BW.FillLauncherTooltip(tooltip)
+    tooltip:AddLine("BagWarden")
+    -- Counting free slots is cheap, so this never needs a scan of its own.
+    tooltip:AddLine(string.format("Bags: %d free of %d", BW.FreeSlots(), BW.TotalSlots()), 0.8, 0.8, 0.8)
+    tooltip:AddLine("Left-click: open your bags", 0.6, 0.6, 0.6)
+    tooltip:AddLine("Right-click: settings", 0.6, 0.6, 0.6)
 end
 
 function BagWarden_OnAddonCompartmentClick(_, button)
@@ -185,12 +251,27 @@ end
 
 function BagWarden_OnAddonCompartmentEnter(_, button)
     GameTooltip:SetOwner(button, "ANCHOR_LEFT")
-    BW.FillTooltip(GameTooltip)
+    BW.FillLauncherTooltip(GameTooltip)
     GameTooltip:Show()
 end
 
 function BagWarden_OnAddonCompartmentLeave()
     GameTooltip:Hide()
+end
+
+--- Our page in the shared YippYapp welcome window. BagWarden needs no setup, so it never opens the
+--- window by itself; the page waits for /yippyapp or the "Welcome" button.
+function BW.RegisterWelcome()
+    if not LIB.RegisterWelcome then return end
+    LIB.RegisterWelcome({
+        id = "BagWarden", title = "BagWarden", version = 1, order = 40,
+        icon = "Interface\\AddOns\\BagWarden\\Media\\icon",
+        subtitle = "One click, one free bag slot.",
+        blurb = "A button in your bag window frees one slot per click, by deleting the least valuable junk "
+            .. "stack you carry. It tells you which item that is before you click, "
+            .. "and never touches quest items, profession gear, recipes or anything green and above.",
+        onOpen = function() BW.OpenBags(false) end,
+    }, BW.db)
 end
 
 function BW.RegisterMinimap()
@@ -199,7 +280,7 @@ function BW.RegisterMinimap()
             icon = "Interface\\AddOns\\BagWarden\\Media\\minimap",
             label = "BagWarden",
             OnClick = function(_, button) BW.OnLauncherClick(button) end,
-            OnTooltipShow = function(tooltip) BW.FillTooltip(tooltip) end,
+            OnTooltipShow = function(tooltip) BW.FillLauncherTooltip(tooltip) end,
         }, BW.db)
     end
     if LIB.RegisterLauncher then
@@ -208,7 +289,7 @@ function BW.RegisterMinimap()
             icon = "Interface\\AddOns\\BagWarden\\Media\\notch",
             onClick = function(_, button) BW.OnLauncherClick(button) end,
             status = function() return BW.FreeSlots() .. " free" end,
-            tooltip = { "Left-click: free a bag slot", "Right-click: settings" },
+            tooltip = { "Left-click: open your bags", "Right-click: settings" },
         }, BW.db)
     end
 end

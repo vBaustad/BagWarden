@@ -1,11 +1,10 @@
 -- BagWarden - showing which stack the next click touches.
--- Hovering the bag button glows the slot it would act on: red for a delete, gold for the two stacks
--- a merge would join. The glow is Blizzard's own "bags-glow-white" atlas, the one new items use,
--- tinted; it sits on top of the item button and is removed the moment the mouse leaves.
+-- Hovering the bag button glows the slot the next click would delete, in red. The glow is
+-- Blizzard's own "bags-glow-white" atlas, the one new items use, tinted; it sits on top of the item
+-- button and is removed the moment the mouse leaves.
 local ADDON, BW = ...
 
 local RED = { 1, 0.15, 0.15 }
-local GOLD = { 1, 0.82, 0.1 }
 
 local glows = {}            -- our textures, one per slot we light up right now
 
@@ -50,15 +49,6 @@ function BW.ShowHighlight()
     BW.ClearHighlight()
     local plan = BW.plan
     if not plan then return end
-
-    if plan.action == "merge" and plan.merge then
-        -- A merge takes nothing away, so it never gets the red treatment.
-        for _, item in ipairs({ plan.merge.from, plan.merge.to }) do
-            local itemButton = FindItemButton(item.bag, item.slot)
-            if itemButton then Glow(itemButton, GOLD) end
-        end
-        return
-    end
 
     local target = plan.target
     if not target then return end

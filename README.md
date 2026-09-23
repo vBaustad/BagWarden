@@ -3,10 +3,11 @@
 Free one bag slot per click, without ever deleting something you need.
 
 Early on, bags fill up faster than you can get back to a vendor. BagWarden puts one button on your
-bag frame. Each click frees exactly one slot: first by merging two part-stacks of the same item, and
-after that by deleting the least valuable junk stack you carry. The tooltip always says what the
-next click will do ("Next: 5x Broken Fang - 25c") and why everything else is kept, so nothing
-happens that you didn't read first.
+bag frame. Each click frees exactly one slot, by deleting the least valuable junk stack you carry.
+The tooltip always says which item that is ("Delete [Broken Fang] - 25c") before you click, and
+hovering the button lights up that slot in your bags, so nothing happens that you didn't read first.
+Joining part-stacks is left to Blizzard's sort button, which sits right next to ours and already
+does it.
 
 ## What it never deletes
 
@@ -19,7 +20,18 @@ happens that you didn't read first.
   always asks before one of those goes.
 
 White items always ask first, in a popup that can also put the item on the never-delete list.
-Nothing is ever deleted automatically, several at a time, or in combat.
+
+## Only when you ask for it
+
+BagWarden deletes only inside your own click on its button, or your own press of its keybind (set it
+under BagWarden in the keybindings). Never on a timer, never several items at once, never in combat,
+and never from the minimap button or a chat command - `/bagw free` will tell you to use the button
+instead. That is partly because the game only allows an addon to delete from a real click, and
+partly because it is the right way round: one deliberate click, one item.
+
+Before anything goes, BagWarden reads the slot again and checks that it still holds the same item,
+the same number of them, and that every protection still passes. If anything changed while you were
+deciding, it deletes nothing and tells you why.
 
 ## How it picks
 

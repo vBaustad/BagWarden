@@ -15,9 +15,15 @@ local function Heading(parent, text)
     return fs
 end
 
+-- The YippYapp window is 572 wide (LibForever 1.0.3), but the panel is reparented into it and can
+-- be resized, so every block of text is kept here and re-widthed with the page.
+local WINDOW_WIDTH = 572
+local notes = {}
+
 local function Note(parent, text)
     local fs = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    fs:SetWidth(560)
+    fs:SetWidth(WINDOW_WIDTH - 24)
+    notes[#notes + 1] = fs
     fs:SetJustifyH("LEFT")
     fs:SetSpacing(2)
     fs:SetText(text)
@@ -27,6 +33,12 @@ end
 function BW.RegisterOptions()
     if category or not (Settings and Settings.RegisterCanvasLayoutCategory) then return end
     panel = CreateFrame("Frame")
+    panel:SetWidth(WINDOW_WIDTH)
+    panel:SetScript("OnSizeChanged", function(self, width)
+        width = width or self:GetWidth()
+        if not width or width <= 0 then return end
+        for _, fs in ipairs(notes) do fs:SetWidth(width - 24) end
+    end)
     local f = panel
 
     local head = f:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
@@ -233,9 +245,17 @@ function BW.RegisterOptions()
 end
 
 --- Returns true when the settings opened; says why in chat when they can't.
+--- Since LibForever 1.0.3 our pages live in the YippYapp window, not in Blizzard's Options, so the
+--- lib opens them; Settings.OpenToCategory is only for a client running an older lib.
 function BW.OpenOptions()
+    if LIB.OpenAddonSettings then
+        LIB.OpenAddonSettings("BagWarden")
+        return true
+    end
     if not category then BW.Print("the settings page isn't available.") return false end
     if InCombatLockdown() then BW.Print("settings can't open in combat.") return false end
-    Settings.OpenToCategory(category:GetID())
+    local id = category.GetID and category:GetID()
+    if not id then BW.Print("the settings page isn't available.") return false end
+    Settings.OpenToCategory(id)
     return true
 end

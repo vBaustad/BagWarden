@@ -3,7 +3,7 @@
 ## Category: YippYapp
 ## Notes: Free one bag slot per click. BagWarden picks the least valuable junk stack in your bags, tells you what it will delete and why the rest is kept, and never touches quest items, reagents you use or anything green and above. Part of YippYapp - addons for WoW: Forever that work even better together.
 ## Author: vebjorn
-## Version: 0.1.0-alpha1
+## Version: 0.1.0-beta1
 ## IconTexture: Interface\AddOns\BagWarden\Media\icon
 ## SavedVariables: BagWardenDB
 ## AddonCompartmentFunc: BagWarden_OnAddonCompartmentClick
@@ -25,13 +25,15 @@ Libs\LibForever-1.0\Minimap.lua
 Libs\LibForever-1.0\Welcome.lua
 Libs\LibForever-1.0\Settings.lua
 
+Bindings.xml
 Core.lua
 Bags.lua
 Quests.lua
 Protect.lua
 Professions.lua
 Value.lua
-Merge.lua
+Delete.lua
+Vendor.lua
 Highlight.lua
 Button.lua
 Options.lua

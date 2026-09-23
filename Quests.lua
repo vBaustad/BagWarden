@@ -8,6 +8,9 @@
 local ADDON, BW = ...
 
 BW.questWanted = {}     -- [name key] = quest title, from the quest log right now
+-- False until a quest-log scan has actually run. Nothing is ever deleted before it has: without the
+-- quest log we can't tell a turn-in trade good from junk (see BW.KeepReason).
+BW.questScanOk = false
 
 -- Items classic quests ask for that look like plain trade goods. Small on purpose: the learned list
 -- does the real work, and this only covers a new character's first hours.
@@ -59,27 +62,36 @@ function BW.ScanQuestLog()
     -- item's own flags and the learned list, never error out (see BW.Coin for why).
     local count, getInfo, getObjectives = C_QuestLog.GetNumQuestLogEntries, C_QuestLog.GetInfo,
         C_QuestLog.GetQuestObjectives
-    if not (count and getInfo and getObjectives) then BW.questWanted = wanted return end
-    local entries = count() or 0
-    for i = 1, entries do
-        local info = getInfo(i)
-        if info and not info.isHeader and info.questID then
-            local title = info.title or ""
-            local objectives = getObjectives(info.questID)
-            if type(objectives) == "table" then
-                for _, objective in ipairs(objectives) do
-                    if objective and (objective.type == "item" or objective.objectiveType == "item") then
-                        local key = ObjectiveName(objective.text)
-                        if key then
-                            wanted[key] = title
-                            BW.Learn(key, title)
+    if not (count and getInfo and getObjectives) then
+        BW.questWanted, BW.questScanOk = wanted, false
+        return
+    end
+    -- A scan that breaks half way through has seen only some of the quests, so it must not count as
+    -- a scan: questScanOk stays false and everything is kept until a whole one succeeds.
+    local ok, err = pcall(function()
+        local entries = count() or 0
+        for i = 1, entries do
+            local info = getInfo(i)
+            if info and not info.isHeader and info.questID then
+                local title = info.title or ""
+                local objectives = getObjectives(info.questID)
+                if type(objectives) == "table" then
+                    for _, objective in ipairs(objectives) do
+                        if objective and (objective.type == "item" or objective.objectiveType == "item") then
+                            local key = ObjectiveName(objective.text)
+                            if key then
+                                wanted[key] = title
+                                BW.Learn(key, title)
+                            end
                         end
                     end
                 end
             end
         end
-    end
+    end)
     BW.questWanted = wanted
+    BW.questScanOk = ok
+    if not ok then BW.Debug("quest scan failed: %s", tostring(err)) end
 end
 
 --- The quest in our log that wants this item, or nil.
