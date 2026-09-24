@@ -136,7 +136,7 @@ function BW.DeleteStack(entry, fromHardware, skippedAsk)
     end
 
     -- Write the log BEFORE the delete: if anything after this errors, the record still exists.
-    BW.LogDeletion(item, entry.real or entry.value or 0, skippedAsk)
+    BW.LogDeletion(item, entry.real or entry.value or 0, skippedAsk, entry.mustAsk and entry.reason or nil)
     DeleteCursorItem()
 
     -- DeleteCursorItem fails silently when it isn't allowed, and the item simply stays on the
@@ -151,6 +151,9 @@ function BW.DeleteStack(entry, fromHardware, skippedAsk)
 
     BW.Print("deleted %dx %s (%s)%s.", item.count, item.name or "?",
         BW.Coin(entry.real or entry.value or 0), skippedAsk and " - Ctrl-click, no question asked" or "")
-    BW.Refresh()
+    -- Leave the deleted stack out and work out the next one NOW: the tooltip under the cursor has
+    -- to name what the NEXT click would take, not what this one just took.
+    BW.Forget(item)
+    BW.PlanNow()
     return true
 end

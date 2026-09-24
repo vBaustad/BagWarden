@@ -85,7 +85,8 @@ function BW.ReportPlan(fromHardware, skipAsk)
         BW.Print("deleting is off in this test build. Nothing was touched.")
         return
     end
-    if plan.action == "confirm" and not skipAsk then
+    -- Ctrl skips the question for ordinary soft keeps, never for an item another addon unlocked.
+    if plan.action == "confirm" and (not skipAsk or plan.target.mustAsk) then
         -- The popup's own Delete button is the player's click, so the deletion happens there.
         BW.AskThenDelete(plan.target)
         return
@@ -157,6 +158,17 @@ local function Anchor(host)
     end
 end
 
+--- The tooltip is the promise: it says what the next click does. So when the plan changes under a
+--- resting cursor - which is exactly what a click, a Ctrl-click or the keybind does - it has to be
+--- rebuilt where it stands rather than waiting for the mouse to leave and come back.
+local function RedrawTooltip()
+    if not (button and GameTooltip and GameTooltip.IsOwned) then return end
+    if not GameTooltip:IsOwned(button) then return end
+    GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
+    BW.FillTooltip(GameTooltip)
+    GameTooltip:Show()
+end
+
 function BW.UpdateButton()
     if not button then return end
     local host = Host()
@@ -171,8 +183,13 @@ function BW.UpdateButton()
     -- Always clickable (a click then just says there's nothing to free); dimmed when idle.
     button:SetAlpha(plan and plan.action and 1 or 0.6)
     button:Show()
-    -- The plan can change while the mouse sits on the button (a bag update, or the click itself).
-    if button:IsMouseOver() then BW.ShowHighlight() end
+    -- The plan can change while the mouse sits on the button (a bag update, or the click itself),
+    -- and the keybind changes it without the mouse being anywhere near. Both the tooltip and the
+    -- red slot in the bags follow it at once.
+    if button:IsMouseOver() or (GameTooltip and GameTooltip.IsOwned and GameTooltip:IsOwned(button)) then
+        BW.ShowHighlight()
+        RedrawTooltip()
+    end
 end
 
 -- ---------------------------------------------------------------------------
@@ -404,6 +421,7 @@ function BW.SmokeTest()
     end
 
     BW.TestStacks()
+    BW.TestOrdering()
     BW.TestProfessions()
     BW.TestSynergies()
     BW.TestTooltip()
@@ -437,6 +455,87 @@ function BW.SelfTest()
         if line:find("FAILED") then return false, line end
     end
     return true, string.format("%d checks, nothing deleted", #lines)
+end
+
+--- The six cases the ordering rules were written for, each one a real screenshot. Run them against
+--- the live comparator so a future "improvement" has to face them.
+function BW.TestOrdering()
+    -- Stand in for a provider: the test items carry the verdict a live AutoFeed would give.
+    local realTier = BW.SynergyTier
+    BW.SynergyTier = function(itemID)
+        for _, item in ipairs(BW.testItems or {}) do
+            if item.itemID == itemID then return item.tier end
+        end
+        return nil
+    end
+    local function pick(label, items)
+        BW.testItems = items
+        local plan = BW.Plan(items)
+        local target = plan.target
+        BW.Print("order (%s): %s", label,
+            target and string.format("%dx %s, %s", target.item.count, target.item.name,
+                BW.Coin(target.real)) or "nothing")
+    end
+    local function stack(id, name, count, price, quality, extra)
+        local it = { bag = 0, slot = id, itemID = id, name = name, count = count, sellPrice = price,
+                     quality = quality, maxStack = 20 }
+        for key, value in pairs(extra or {}) do it[key] = value end
+        return it
+    end
+    pick("1c belt before 97c grey", {
+        stack(1, "Rustic Belt", 1, 1, 1, { maxStack = 1 }),
+        stack(2, "Cracked Sledge", 1, 97, 0, { maxStack = 1 }) })
+    pick("2 milk before 65c grey", {
+        stack(3, "Milk", 2, 6, 1, { classID = 0 }),
+        stack(2, "Ragged Cloak", 1, 65, 0, { maxStack = 1 }) })
+    pick("13 before 20 of one item", {
+        stack(4, "Boar Meat", 20, 6, 1, { classID = 0 }),
+        { bag = 0, slot = 9, itemID = 4, name = "Boar Meat", count = 13, sellPrice = 6, quality = 1,
+          maxStack = 20, classID = 0 } })
+    pick("1c cheese before 93c parts", {
+        stack(5, "Darnassian Bleu", 1, 1, 1, { classID = 0 }),
+        stack(6, "Gyrostabilizer", 3, 31, 1, { classID = 7 }) })
+    pick("2s40 grey knife before 16c eye", {
+        stack(7, "Murloc Eye", 1, 16, 1, { classID = 7, craftingReagent = true }),
+        stack(8, "Fisherman Knife", 1, 240, 0, { maxStack = 1 }) })
+    pick("spare stack before cheaper junk", {
+        stack(10, "Surplus Bread", 5, 2, 1, { classID = 0, tier = "spare" }),
+        stack(11, "Chipped Bowl", 1, 1, 0, { maxStack = 1 }) })
+    pick("buff food only when nothing else", {
+        stack(9, "Sagefish (+XP)", 4, 1, 1, { classID = 0, tier = "critical" }),
+        stack(6, "Gyrostabilizer", 3, 31, 1, { classID = 7 }) })
+    BW.SynergyTier, BW.testItems = realTier, nil
+
+    -- The three cases for the one path that can overrule BagWarden's own "keep this". The last one
+    -- is the important one: it tests the class gate, not our good intentions.
+    local realSpare = BW.SpareProvider
+    local function spareSays(itemID)
+        BW.SpareProvider = function(id) return id == itemID and "AutoFeed" or nil end
+    end
+    local function verdict(label, item)
+        local strength, reason, mustAsk = BW.KeepReason(item)
+        BW.Print("unlock (%s): %s%s - %s", label, strength or "deletable",
+            mustAsk and ", always asks" or "", reason or "-")
+    end
+    local bread = { bag = 0, slot = 1, itemID = 1113, name = "Conjured Bread", count = 8,
+                    sellPrice = 0, quality = 1, maxStack = 20, classID = 0 }
+    local hearth = { bag = 0, slot = 2, itemID = 6948, name = "Hearthstone", count = 1,
+                     sellPrice = 0, quality = 1, maxStack = 1, classID = 15 }
+    spareSays(1113)
+    verdict("conjured bread, AutoFeed calls it spare", bread)
+    BW.SpareProvider = function() return nil end
+    verdict("hearthstone, nobody tiers it", hearth)
+    spareSays(6948)
+    verdict("hearthstone WRONGLY called spare", hearth)
+
+    -- An unlocked item that ALSO matches something learned from a quest: the soft keeps below the
+    -- lift return without mustAsk, so this proves the guarantee survives meeting one of them.
+    spareSays(1113)
+    local realLearned = BW.LearnedFor
+    BW.LearnedFor = function(name) return name == "Conjured Bread" and "Some Old Quest" or nil end
+    verdict("unlocked AND learned from a quest", bread)
+    BW.LearnedFor = realLearned
+    BW.SpareProvider = realSpare
 end
 
 --- Two stacks of the same item: the smaller one must always be the one offered, because both free

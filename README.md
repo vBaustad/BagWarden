@@ -44,6 +44,11 @@ deciding, it deletes nothing and tells you why.
 
 ## How it picks
 
+Everything ordinary is offered first, cheapest slot first - a grey item's vendor price is exactly
+what it is worth, since vendoring is all a grey is for. Crafting reagents and trade goods come after
+that whatever they cost, because their price tag says the least about them, and anything another
+YippYapp addon calls critical (your buff food) is offered only when nothing else is left.
+
 A stack is judged by what the slot is worth: sell price times how many you hold. A stack that is
 already at least half full, and that you are still picking up, counts as what it will be worth full
 instead, so a nearly finished stack of good drops isn't binned to save a slot you would refill in a

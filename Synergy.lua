@@ -15,6 +15,14 @@ local PROVIDERS = {
     "GuildhallWanted",              -- what you've listed, or guildies are after
 }
 
+-- The addon behind each list, for telling the player who said what.
+local LABELS = {
+    BuffWardenWeaponEnhancers = "BuffWarden",
+    SkillwrightReagents = "Skillwright",
+    AutoFeedConsumables = "AutoFeed",
+    GuildhallWanted = "Guildhall",
+}
+
 --- The table a provider published, or nil. LIB.GetData is an index into the library's own table,
 --- so it needs no pcall; the provider's FUNCTIONS are the part we don't trust.
 local function Provider(name)
@@ -71,6 +79,20 @@ function BW.SynergyTier(itemID)
             if called and (tier == "critical" or tier == "useful" or tier == "spare") then
                 return tier
             end
+        end
+    end
+    return nil
+end
+
+--- Which addon calls this item "spare", if any - the name, not just the verdict, because an item
+--- that only BagWarden's own rules would have kept must be able to say who overruled them.
+function BW.SpareProvider(itemID)
+    if not itemID then return nil end
+    for _, name in ipairs(PROVIDERS) do
+        local data = Provider(name)
+        if data and type(data.Tier) == "function" then
+            local called, tier = pcall(data.Tier, itemID)
+            if called and tier == "spare" then return LABELS[name] or name end
         end
     end
     return nil

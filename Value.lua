@@ -36,16 +36,35 @@ end
 -- destroying 93c of gyrostabilizers to avoid asking one question about 1c of cheese. Asking is a
 -- question, not a ranking. So value decides, across the lot, and the only thing held back is the
 -- item you'd actually mourn.
-local function LastResort(entry)
-    return entry.tier == "critical"
+-- Item class 7 is Trade Goods: ore, stone, cloth, leather, herbs, parts, the things people buy from
+-- each other. Their vendor price is the number that means LEAST about them, while a grey item's
+-- vendor price is exactly what it is worth, because vendoring is all a grey is for. So we rank in
+-- three groups, and only inside a group does price decide:
+--   1. everything ordinary - greys, worn-out whites, food you can rebuy;
+--   2. crafting reagents and trade goods, whose worth isn't on the price tag;
+--   3. whatever a provider calls "critical", which is only ever offered when nothing else is left.
+-- This is what makes a 2s40 grey knife go before a 16c Murloc Eye while a 1c belt still goes before
+-- a 97c grey hammer: the belt is ordinary, the eye is not.
+-- And ahead of all of it: anything a provider calls "spare", which is its way of saying somebody
+-- can replace this for nothing - a mage's conjured bread, or a surplus stack. Losing one of those
+-- costs less than losing any amount of money, so they go first.
+-- All of this needs a provider to speak up. With no AutoFeed installed nothing is ever "spare" or
+-- "critical", and the order is simply ordinary items, then trade goods, by price.
+local CLASS_TRADE_GOODS = 7
+
+local function Rank(entry)
+    if entry.tier == "spare" then return 0 end
+    if entry.tier == "critical" then return 3 end
+    local item = entry.item
+    if item.craftingReagent or item.classID == CLASS_TRADE_GOODS then return 2 end
+    return 1
 end
 
---- Sort: the slot that costs least goes first, whatever colour the item is and whether or not it
---- asks first. The one exception is an item a provider calls "critical": that is offered only when
---- there is nothing else left. Ties go to the one we looted longest ago.
+--- Sort: by group first (see Rank), then the slot that costs least, whatever colour the item is and
+--- whether or not it asks. Ties go to the one we looted longest ago.
 local function Cheaper(a, b)
-    local la, lb = LastResort(a), LastResort(b)
-    if la ~= lb then return not la end
+    local ra, rb = Rank(a), Rank(b)
+    if ra ~= rb then return ra < rb end
     if a.value ~= b.value then return a.value < b.value end
     local ta, tb = BW.lootSeen[a.item.itemID] or 0, BW.lootSeen[b.item.itemID] or 0
     if ta ~= tb then return ta < tb end
@@ -75,7 +94,7 @@ function BW.Plan(items)
     -- leaving them out also keeps the sort a plain comparison of different items.
     local smallest = {}
     for _, item in ipairs(items) do
-        local strength, reason = BW.KeepReason(item)
+        local strength, reason, mustAsk = BW.KeepReason(item)
         -- A hard keep is simply not a candidate. What's kept and why is shown on the settings page,
         -- which asks KeepReason itself when the page is opened.
         if strength ~= "hard" then
@@ -88,6 +107,8 @@ function BW.Plan(items)
                     item = item, value = value, potential = potential, reason = reason,
                     real = BW.StackValue(item), confirm = strength == "soft" or nil,
                     tier = BW.SynergyTier and BW.SynergyTier(item.itemID) or nil,
+                    -- Set only for an item another addon unlocked: Ctrl can't skip its question.
+                    mustAsk = mustAsk or nil,
                 }
             end
         end

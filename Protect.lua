@@ -42,7 +42,8 @@ local function TooltipSaysQuest(item)
     return verdict
 end
 
---- Why this stack is kept: "hard"/"soft", a short reason, or nil when it may be deleted.
+--- Why this stack is kept: "hard"/"soft", a short reason, and for the one case that overrules our
+--- own rules, a third value: mustAsk, meaning the question can never be skipped.
 --- Layers, strongest first.
 function BW.KeepReason(item)
     if not item then return "hard", "unknown item" end
@@ -69,7 +70,24 @@ function BW.KeepReason(item)
     local quality = item.quality or 0
     if quality > UNCOMMON then return "hard", "too good to delete" end
     if quality == UNCOMMON and not (BW.db and BW.db.allowGreen) then return "hard", "green or better" end
-    if item.hasNoValue or (item.sellPrice or 0) <= 0 then return "hard", "can't be sold" end
+    -- No sell price usually means "not for selling": a hearthstone, a key. That is a GUESS about
+    -- how much the item matters, and for one class of item the guess is simply wrong - a mage's
+    -- conjured bread is free to remake, and costs nothing to lose. So a provider that knows the
+    -- item by ID may correct the guess. It may never correct a fact: the lift needs the item to be
+    -- a CONSUMABLE, which is a fact about the item rather than a promise about the provider, so a
+    -- buggy or hostile list still cannot unlock a hearthstone (Miscellaneous), a key or a quest
+    -- item. Everything else on this item still applies, a Keep from any provider still wins below,
+    -- and a lifted item ALWAYS goes through the confirm popup - see mustAsk.
+    local unlockedBy
+    if item.hasNoValue or (item.sellPrice or 0) <= 0 then
+        if item.classID == CLASS_CONSUMABLE and BW.SpareProvider then
+            -- Asking who calls it spare must not be able to take the scan down with it: a lookup
+            -- that errors simply hasn't unlocked anything, and the item is kept.
+            local ok, who = pcall(BW.SpareProvider, item.itemID)
+            unlockedBy = ok and who or nil
+        end
+        if not unlockedBy then return "hard", "can't be sold" end
+    end
     if item.locked then return "hard", "in use" end
 
     -- 4b. The tooltip check sits here, not with the other quest tests, because it is the one
@@ -103,6 +121,16 @@ function BW.KeepReason(item)
         elseif mode == "mine" and not (BW.ProviderPresent and BW.ProviderPresent("SkillwrightReagents")) then
             return "hard", "crafting reagent"
         end
+    end
+
+    -- 5c. A lifted item asks every single time, and says who lifted it. mustAsk is the third return:
+    -- it means the confirm popup cannot be skipped, not even by holding Ctrl.
+    -- This sits ABOVE the soft keeps below, not among them: those return soft WITHOUT mustAsk, so
+    -- an unlocked item that also matched one of them would lose the guarantee that got the lift
+    -- allowed in the first place. Reaching this line at all means the lift let it through, so
+    -- naming the unlock is also the truer reason to show.
+    if unlockedBy then
+        return "soft", unlockedBy .. ": you can make this again", true
     end
 
     -- 6. Soft: an item some quest has asked for before, on this account, or one of the trade goods

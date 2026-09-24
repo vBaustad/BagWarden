@@ -114,7 +114,7 @@ end
 BW.LOG_MAX = 200
 
 --- Remember a deletion, newest first. Account-wide, so the log survives a character switch.
-function BW.LogDeletion(item, value, skippedAsk)
+function BW.LogDeletion(item, value, skippedAsk, unlockedBy)
     if not (BW.db and item) then return end
     table.insert(BW.db.log, 1, {
         link = item.link,
@@ -124,6 +124,8 @@ function BW.LogDeletion(item, value, skippedAsk)
         when = time(),
         -- Ctrl was held, so no popup was shown. Recorded so "I never confirmed that" has an answer.
         ctrl = skippedAsk and true or nil,
+        -- Set when another addon overruled our own "keep this" - it says which, and why.
+        unlocked = unlockedBy or nil,
     })
     for i = #BW.db.log, BW.LOG_MAX + 1, -1 do table.remove(BW.db.log, i) end
 end
@@ -150,10 +152,29 @@ function BW.Refresh()
     end)
 end
 
+--- A stack we have just deleted. The client clears the slot when it gets round to it, so a scan
+--- taken in the same click still sees it; until the bags update, we leave it out ourselves.
+--- Cleared on BAG_UPDATE_DELAYED, which is the client confirming.
+function BW.Forget(item)
+    BW.goneAlready = item and { bag = item.bag, slot = item.slot, itemID = item.itemID } or nil
+end
+
+local function WithoutTheDeleted(items)
+    local gone = BW.goneAlready
+    if not gone then return items end
+    for index, item in ipairs(items) do
+        if item.bag == gone.bag and item.slot == gone.slot and item.itemID == gone.itemID then
+            table.remove(items, index)
+            break
+        end
+    end
+    return items
+end
+
 --- Scan and plan right now, whatever is on screen. Every reader of BW.plan that must be current
 --- calls this: the click paths and the tooltips.
 function BW.PlanNow()
-    BW.items = BW.ScanBags()
+    BW.items = WithoutTheDeleted(BW.ScanBags())
     BW.UpdateLootClock(BW.items)
     BW.plan = BW.Plan(BW.items)
     BW.planStale = false
@@ -185,6 +206,8 @@ f:SetScript("OnEvent", function(_, event, arg1)
         if LIB.RegisterSelfTest then LIB.RegisterSelfTest("BagWarden", BW.SelfTest) end
         BW.Refresh()
     elseif event == "BAG_UPDATE_DELAYED" then
+        -- The client has caught up, so whatever we were pretending had gone really has.
+        BW.goneAlready = nil
         BW.Refresh()
     elseif event == "GET_ITEM_INFO_RECEIVED" then
         -- The client has just filled in an item we couldn't judge: drop what we cached for it and

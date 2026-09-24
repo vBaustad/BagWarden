@@ -147,7 +147,9 @@ function BW.RegisterOptions()
     local reagentNote = Note(f, "Ore, stone, cloth, leather and herbs - anything the game marks "
         .. "\"Crafting Reagent\". Reagents that aren't kept still ask before they go, like anything else "
         .. "you might want.")
-    reagentNote:SetPoint("TOPLEFT", professionNote, "BOTTOMLEFT", 0, -10)
+    -- The intro to the three choices below, so it sits at their own indent with a clear gap above:
+    -- at the description indent it read as a second paragraph about profession gear instead.
+    reagentNote:SetPoint("TOPLEFT", professionNote, "BOTTOMLEFT", -INDENT, -16)
 
     local reagentChoices, reagentButtons = {
         { value = "mine", label = "Keep reagents my professions use" },
@@ -157,7 +159,7 @@ function BW.RegisterOptions()
     local reagentAnchor = reagentNote
     for index, choice in ipairs(reagentChoices) do
         local cb = CreateFrame("CheckButton", nil, f, "UIRadioButtonTemplate")
-        cb:SetPoint("TOPLEFT", reagentAnchor, "BOTTOMLEFT", index == 1 and -INDENT or 0, index == 1 and -6 or -2)
+        cb:SetPoint("TOPLEFT", reagentAnchor, "BOTTOMLEFT", 0, index == 1 and -6 or -2)
         local label = f:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
         label:SetPoint("LEFT", cb, "RIGHT", 4, 0)
         label:SetText(choice.label)
@@ -259,7 +261,7 @@ function BW.RegisterOptions()
             lines[#lines + 1] = string.format("%s x%d - %s  |cff808080%s%s|r",
                 entry.link or entry.name or "?", entry.count or 1,
                 BW.Coin(entry.value or 0), date("%d.%m %H:%M", entry.when or 0),
-                entry.ctrl and " - Ctrl-click" or "")
+                (entry.ctrl and " - Ctrl-click" or "") .. (entry.unlocked and (" - " .. entry.unlocked) or ""))
         end
         if #log > 20 then lines[#lines + 1] = string.format("|cff808080...and %d more|r", #log - 20) end
         return table.concat(lines, "\n")
