@@ -1,5 +1,9 @@
 # BagWarden
 
+## 0.1.0-beta3
+
+- Updated shared YippYapp library.
+
 ## 0.1.0-beta2
 
 - BagWarden's own checks now run from `/yippyapp test` as well as `/bagw test`, so one command can
@@ -8,9 +12,10 @@
 - The bag button's tooltip is down to what the click does: how full your bags are, the item that
   goes, and what each mouse button does. The sort-button tip and the "kept until last" line are
   gone.
-- Among the things BagWarden asks about, it now offers the least precious first when another
-  YippYapp addon can tell it which those are. With AutoFeed installed that means conjured bread
-  long before your ordinary food, and your buff food last of all.
+- Cheapest slot first, across everything: whether an item asks before it goes no longer changes
+  where it sits in the queue. Asking is a question, not a ranking, so 1c of cheese is offered before
+  93c of engineering parts. The one exception: with AutoFeed installed, your buff food is offered
+  only when there is nothing else left.
 
 - Fixed the settings page being cut off down the left-hand side, which also hid which "Asking first"
   choice was selected.
@@ -29,9 +34,6 @@
   nothing. Under Protected items you choose which reagents to keep: the ones your own professions
   use (the default), every reagent, or none. Telling your professions' reagents apart needs
   Skillwright; without it the first choice keeps them all rather than guessing.
-- Anything that asks now waits until the plain junk is gone. A 2c Rough Stone used to be offered
-  before a 97c hammer because it was cheaper, which was arithmetically right and practically wrong.
-  Cheapest first still decides within each group.
 
 - Hold Ctrl while clicking the bag button (or pressing its keybind) to delete without being asked.
   It skips the question only: everything BagWarden keeps is still kept, every check still runs, and

@@ -34,9 +34,11 @@ function BW.ForgetItemInfo(itemID)
     if itemID then
         BW.itemInfo[itemID] = nil
         if BW.professionCache then BW.professionCache[itemID] = nil end
+        if BW.questTooltipCache then BW.questTooltipCache[itemID] = nil end
     else
         wipe(BW.itemInfo)
         if BW.professionCache then wipe(BW.professionCache) end
+        if BW.questTooltipCache then wipe(BW.questTooltipCache) end
     end
 end
 

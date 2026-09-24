@@ -18,16 +18,28 @@ BW.protectors = {}
 --- The item's own tooltip, as a last check for "Quest Item" / "This Item Begins a Quest" on items
 --- whose flags we couldn't read. Returns true, false, or NIL when the tooltip couldn't be read -
 --- and nil means keep, because a tooltip we can't read may be the one that says "Quest Item".
-local function TooltipSaysQuest(bag, slot)
+--- Building a tooltip is the most expensive thing in the whole scan, and the answer never changes
+--- for an item, so it is remembered per itemID. An unreadable (nil) answer is NOT remembered, or a
+--- single bad read would keep that item for the rest of the session.
+BW.questTooltipCache = {}
+
+local function TooltipSaysQuest(item)
+    local cached = BW.questTooltipCache[item.itemID]
+    if cached ~= nil then return cached end
     if not (C_TooltipInfo and C_TooltipInfo.GetBagItem) then return nil end
-    local ok, data = pcall(C_TooltipInfo.GetBagItem, bag, slot)
+    local ok, data = pcall(C_TooltipInfo.GetBagItem, item.bag, item.slot)
     if not ok or not (data and data.lines) then return nil end
     local questItem, startsQuest = ITEM_BIND_QUEST or "Quest Item", ITEM_STARTS_QUEST or "This Item Begins a Quest"
+    local verdict = false
     for _, line in ipairs(data.lines) do
         local text = line and line.leftText
-        if type(text) == "string" and (text == questItem or text == startsQuest) then return true end
+        if type(text) == "string" and (text == questItem or text == startsQuest) then
+            verdict = true
+            break
+        end
     end
-    return false
+    BW.questTooltipCache[item.itemID] = verdict
+    return verdict
 end
 
 --- Why this stack is kept: "hard"/"soft", a short reason, or nil when it may be deleted.
@@ -48,9 +60,6 @@ function BW.KeepReason(item)
     if item.isQuestItem or item.questID then return "hard", "quest item" end
     if item.classID == CLASS_QUEST then return "hard", "quest item" end
     if item.bindType == BIND_QUEST then return "hard", "quest item" end
-    local tooltipQuest = TooltipSaysQuest(item.bag, item.slot)
-    if tooltipQuest == nil then return "hard", "can't read its tooltip" end
-    if tooltipQuest then return "hard", "quest item" end
 
     -- 3. Your own never-delete list.
     if BW.IsIgnored(item.itemID) then return "hard", "on your never-delete list" end
@@ -62,6 +71,13 @@ function BW.KeepReason(item)
     if quality == UNCOMMON and not (BW.db and BW.db.allowGreen) then return "hard", "green or better" end
     if item.hasNoValue or (item.sellPrice or 0) <= 0 then return "hard", "can't be sold" end
     if item.locked then return "hard", "in use" end
+
+    -- 4b. The tooltip check sits here, not with the other quest tests, because it is the one
+    -- expensive read in the chain. Everything above keeps the item anyway, so nothing settled up
+    -- there ever pays for a tooltip.
+    local tooltipQuest = TooltipSaysQuest(item)
+    if tooltipQuest == nil then return "hard", "can't read its tooltip" end
+    if tooltipQuest then return "hard", "quest item" end
 
     -- 5. Profession gear, and what the other YippYapp addons say. A rule that errors keeps the item:
     -- we asked it a question and got no answer. These come BEFORE our own reagent rule on purpose:

@@ -54,7 +54,7 @@ of something, however big the stack could get.
 
 BagWarden is part of YippYapp, addons for WoW: Forever that work even better together. With
 Skillwright installed it keeps the reagents for recipes you know; with AutoFeed it keeps the food,
-water and bandages your macros use, and offers the conjured bread long before your buff food; with
+water and bandages your macros use, and offers your buff food only as a last resort; with
 BuffWarden it keeps the sharpening stones and oils you use; with Guildhall it keeps what you have
 listed or guildies want. Each addon works fully on its own.
 

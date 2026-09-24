@@ -28,33 +28,24 @@ function BW.SlotValue(item, filling)
     return price * count, false
 end
 
--- Within the things that ASK, some are far more precious than others. A provider can say so with
--- Tier(itemID): the conjured bread you can make more of is "spare", the food and drink your macros
--- use is "useful", buff food (and water, for a mana class) is "critical". Items nobody has an
--- opinion on sit between useful and critical: we know less about them than the provider does about
--- its own, but a stranger's food is still not someone's +5% XP meal.
-local TIER_ORDER = { spare = 1, useful = 2, critical = 4 }
-local NO_OPINION = 3
-
-local function Precious(entry)
-    return TIER_ORDER[entry.tier] or NO_OPINION
+-- A provider can say how much the player would miss an item, with Tier(itemID): "spare" for the
+-- conjured bread they can make more of, "useful" for the food their macros use, "critical" for buff
+-- food and, for a mana class, water. Only "critical" changes the order, and only as a last resort.
+--
+-- We tried sorting the things that ASK behind everything that doesn't, and it was wrong: it meant
+-- destroying 93c of gyrostabilizers to avoid asking one question about 1c of cheese. Asking is a
+-- question, not a ranking. So value decides, across the lot, and the only thing held back is the
+-- item you'd actually mourn.
+local function LastResort(entry)
+    return entry.tier == "critical"
 end
 
---- Sort, in two tiers.
---- Tier one is everything BagWarden can delete without asking: plain stuff whose only use is the
---- money it sells for. Tier two is everything that asks - reagents, food, drink, things quests have
---- wanted. A 2c Rough Stone is cheaper than a 97c hammer, but price is not the same as usefulness,
---- and offering the stone first is technically right and practically wrong. So nothing you might
---- want is offered while plain junk is still there.
---- Inside each tier: cheapest slot first, whatever colour it is - a 97c grey must not go before a
---- 1c white just because grey means junk. Ties go to the one we looted longest ago.
+--- Sort: the slot that costs least goes first, whatever colour the item is and whether or not it
+--- asks first. The one exception is an item a provider calls "critical": that is offered only when
+--- there is nothing else left. Ties go to the one we looted longest ago.
 local function Cheaper(a, b)
-    if (a.confirm or false) ~= (b.confirm or false) then return not a.confirm end
-    -- Only inside the ask tier, where the provider opinions live.
-    if a.confirm and b.confirm then
-        local pa, pb = Precious(a), Precious(b)
-        if pa ~= pb then return pa < pb end
-    end
+    local la, lb = LastResort(a), LastResort(b)
+    if la ~= lb then return not la end
     if a.value ~= b.value then return a.value < b.value end
     local ta, tb = BW.lootSeen[a.item.itemID] or 0, BW.lootSeen[b.item.itemID] or 0
     if ta ~= tb then return ta < tb end

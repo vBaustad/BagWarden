@@ -15,14 +15,21 @@ local PROVIDERS = {
     "GuildhallWanted",              -- what you've listed, or guildies are after
 }
 
+--- The table a provider published, or nil. LIB.GetData is an index into the library's own table,
+--- so it needs no pcall; the provider's FUNCTIONS are the part we don't trust.
+local function Provider(name)
+    local data = LIB.GetData and LIB.GetData(name)
+    return type(data) == "table" and data or nil
+end
+
 --- Ask every provider that is present. Returns the first reason given, or nil.
 --- Answers are NOT cached: they follow the player's equipped weapon, known recipes and settings,
 --- so a stale answer would be worse than the lookup it saves.
 function BW.SynergyReason(item)
     if not (item and item.itemID and LIB.GetData) then return nil end
     for _, name in ipairs(PROVIDERS) do
-        local ok, data = pcall(LIB.GetData, name)
-        if ok and type(data) == "table" and type(data.Keep) == "function" then
+        local data = Provider(name)
+        if data and type(data.Keep) == "function" then
             local called, reason = pcall(data.Keep, item.itemID)
             if not called then
                 BW.Debug("%s.Keep errored: %s", name, tostring(reason))
@@ -43,9 +50,8 @@ table.insert(BW.protectors, BW.SynergyReason)
 --- "no": without Skillwright we cannot tell one profession's reagents from another's, so we must
 --- know whether anybody is able to tell us rather than assuming the worst.
 function BW.ProviderPresent(name)
-    if not LIB.GetData then return false end
-    local ok, data = pcall(LIB.GetData, name)
-    return ok and type(data) == "table" and type(data.Keep) == "function"
+    local data = Provider(name)
+    return data ~= nil and type(data.Keep) == "function"
 end
 
 -- ---------------------------------------------------------------------------
@@ -59,8 +65,8 @@ end
 function BW.SynergyTier(itemID)
     if not (itemID and LIB.GetData) then return nil end
     for _, name in ipairs(PROVIDERS) do
-        local ok, data = pcall(LIB.GetData, name)
-        if ok and type(data) == "table" and type(data.Tier) == "function" then
+        local data = Provider(name)
+        if data and type(data.Tier) == "function" then
             local called, tier = pcall(data.Tier, itemID)
             if called and (tier == "critical" or tier == "useful" or tier == "spare") then
                 return tier
@@ -76,8 +82,8 @@ end
 function BW.TestSynergies()
     local found = 0
     for _, name in ipairs(PROVIDERS) do
-        local ok, data = pcall(LIB.GetData, name)
-        local usable = ok and type(data) == "table" and type(data.Keep) == "function"
+        local data = Provider(name)
+        local usable = data ~= nil and type(data.Keep) == "function"
         if usable then
             found = found + 1
             BW.Print("synergy: %s is providing keep rules%s", name,
