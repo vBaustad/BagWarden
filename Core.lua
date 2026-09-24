@@ -15,14 +15,30 @@ local defaults = {
     sellGreys = true,       -- sell all greys when a merchant window opens
     smallSearch = false,    -- shrink Blizzard's bag search box to free room in the bag's top row
     protectProfession = true, -- keep profession tools, skill gear and recipes (Professions.lua)
-    confirmWhite = true,    -- white items always ask first (kept as a setting so it can't be lost)
+    -- Which crafting reagents to keep: "mine" (the ones your professions use, which needs
+    -- Skillwright to tell them apart), "all", or "none". See Protect.lua step 5b.
+    reagentKeep = "mine",
+    -- Ask before deleting anything of this quality or better: 0 grey, 1 white, 2 = don't ask on
+    -- quality alone. Green is handled by allowGreen below and always asks. Reagents, consumables and
+    -- anything a quest has wanted always ask, whatever this says.
+    askFrom = 2,
+    allowGreen = false,     -- let green items be deleted at all; they always ask first (Protect.lua)
     ignore = {},            -- [itemID] = true, never delete (right-click the button, or the popup)
     log = {},               -- what we deleted, newest first: { link, name, count, value, when }
     learned = {},           -- ["item name in lower case"] = "quest title", account-wide, see Quests.lua
-    minimap = {},
+    minimap = {},         -- LibDBIcon's own store, filled by LIB.RegisterMinimapButton
 }
 
-local migrations = {}
+local migrations = {
+    -- 2: "keep crafting reagents" became a three-way choice. Whoever had it off wanted reagents
+    -- deletable, so they get "none"; everyone else gets the new default.
+    [2] = function(db)
+        if db.reagentKeep == nil then
+            db.reagentKeep = (db.keepReagents == false) and "none" or "mine"
+        end
+        db.keepReagents = nil
+    end,
+}
 
 BW.lootSeen = {}            -- [itemID] = time() when we last gained one
 BW.counts = {}              -- [itemID] = how many we held at the last scan, to spot gains
@@ -98,7 +114,7 @@ end
 BW.LOG_MAX = 200
 
 --- Remember a deletion, newest first. Account-wide, so the log survives a character switch.
-function BW.LogDeletion(item, value)
+function BW.LogDeletion(item, value, skippedAsk)
     if not (BW.db and item) then return end
     table.insert(BW.db.log, 1, {
         link = item.link,
@@ -106,6 +122,8 @@ function BW.LogDeletion(item, value)
         count = item.count,
         value = value or 0,
         when = time(),
+        -- Ctrl was held, so no popup was shown. Recorded so "I never confirmed that" has an answer.
+        ctrl = skippedAsk and true or nil,
     })
     for i = #BW.db.log, BW.LOG_MAX + 1, -1 do table.remove(BW.db.log, i) end
 end
@@ -158,11 +176,13 @@ f:SetScript("OnEvent", function(_, event, arg1)
     if event == "ADDON_LOADED" then
         if arg1 ~= ADDON then return end
         BagWardenDB = BagWardenDB or {}
-        BW.db = LIB.PrepareDB(BagWardenDB, defaults, migrations, 1)
+        BW.db = LIB.PrepareDB(BagWardenDB, defaults, migrations, 2)
     elseif event == "PLAYER_LOGIN" then
         BW.RegisterOptions()
         BW.RegisterMinimap()
         BW.RegisterWelcome()
+        -- /yippyapp test runs every addon's checks in one go; ours is the same set as /bagw test.
+        if LIB.RegisterSelfTest then LIB.RegisterSelfTest("BagWarden", BW.SelfTest) end
         BW.Refresh()
     elseif event == "BAG_UPDATE_DELAYED" then
         BW.Refresh()
@@ -196,12 +216,15 @@ SlashCmdList.BAGWARDEN = function(msg)
         BW.Print("debug %s", BW.db.debug and "on" or "off")
     elseif msg == "settings" or msg == "options" then
         BW.OpenOptions()
+    elseif msg == "bags" then
+        -- The bags are the player's own window; this is just a convenience for a macro.
+        if type(ToggleAllBags) == "function" then ToggleAllBags() end
     elseif msg == "free" then
         -- Merging works from chat, deleting does not: the client only allows that inside a real
         -- click or keypress. DeleteStack says so rather than failing silently.
         BW.ReportPlan(false)
     else
-        BW.OnLauncherClick("LeftButton")
+        BW.OnLauncherClick()
     end
 end
 
@@ -211,42 +234,29 @@ BINDING_HEADER_BAGWARDEN = "BagWarden"
 BINDING_NAME_BAGWARDEN_FREE_SLOT = "Free a bag slot"
 
 function BagWardenFreeSlot()
-    BW.ReportPlan(true)
+    -- Ctrl held at the moment of the press skips the question, exactly like a Ctrl-click.
+    BW.ReportPlan(true, IsControlKeyDown())
 end
 
---- Away from the bags, nothing is ever deleted: the minimap button, the launcher notch and the
---- addon compartment only open things. Deleting lives on the bag frame's own button, where you can
---- see what's in your bags. Left opens the bags (the addon's "window"), right opens the settings.
-function BW.OnLauncherClick(mouse)
-    if mouse == "RightButton" then BW.OpenOptions() else BW.OpenBags(true) end
-end
-
---- Show the bags. `toggle` closes them again on a second click, which is what a minimap button
---- should do; the welcome card only ever opens them.
-function BW.OpenBags(toggle)
-    if toggle and type(ToggleAllBags) == "function" then
-        ToggleAllBags()
-    elseif type(OpenAllBags) == "function" then
-        OpenAllBags()
-    elseif type(ToggleAllBags) == "function" then
-        ToggleAllBags()
-    else
-        BW.OpenOptions()
-    end
+--- Every icon we own - the minimap button, the YippYapp row, the launcher notch, the addon
+--- compartment - opens the settings, whichever mouse button was used. BagWarden has no window of
+--- its own: its UI is the button inside Blizzard's bag window, which the player opens themselves.
+--- Nothing out here ever deletes.
+function BW.OnLauncherClick()
+    BW.OpenOptions()
 end
 
 --- What the minimap button, the notch and the compartment say. The bag button has its own tooltip
---- with the next action; these only open things, so they say so.
+--- with the next deletion; these only open the settings, so they say so and nothing more.
 function BW.FillLauncherTooltip(tooltip)
     tooltip:AddLine("BagWarden")
     -- Counting free slots is cheap, so this never needs a scan of its own.
     tooltip:AddLine(string.format("Bags: %d free of %d", BW.FreeSlots(), BW.TotalSlots()), 0.8, 0.8, 0.8)
-    tooltip:AddLine("Left-click: open your bags", 0.6, 0.6, 0.6)
-    tooltip:AddLine("Right-click: settings", 0.6, 0.6, 0.6)
+    tooltip:AddLine("Click: settings", 0.6, 0.6, 0.6)
 end
 
-function BagWarden_OnAddonCompartmentClick(_, button)
-    BW.OnLauncherClick(button)
+function BagWarden_OnAddonCompartmentClick()
+    BW.OnLauncherClick()
 end
 
 function BagWarden_OnAddonCompartmentEnter(_, button)
@@ -269,8 +279,8 @@ function BW.RegisterWelcome()
         subtitle = "One click, one free bag slot.",
         blurb = "A button in your bag window frees one slot per click, by deleting the least valuable junk "
             .. "stack you carry. It tells you which item that is before you click, "
-            .. "and never touches quest items, profession gear, recipes or anything green and above.",
-        onOpen = function() BW.OpenBags(false) end,
+            .. "and never touches quest items, profession gear, recipes or anything better than green.",
+        onOpen = function() BW.OpenOptions() end,
     }, BW.db)
 end
 
@@ -279,7 +289,7 @@ function BW.RegisterMinimap()
         LIB.RegisterMinimapButton("BagWarden", {
             icon = "Interface\\AddOns\\BagWarden\\Media\\minimap",
             label = "BagWarden",
-            OnClick = function(_, button) BW.OnLauncherClick(button) end,
+            OnClick = function() BW.OnLauncherClick() end,
             OnTooltipShow = function(tooltip) BW.FillLauncherTooltip(tooltip) end,
         }, BW.db)
     end
@@ -287,9 +297,9 @@ function BW.RegisterMinimap()
         LIB.RegisterLauncher({
             id = "BagWarden", label = "BagWarden", order = 40,
             icon = "Interface\\AddOns\\BagWarden\\Media\\notch",
-            onClick = function(_, button) BW.OnLauncherClick(button) end,
+            onClick = function() BW.OnLauncherClick() end,
             status = function() return BW.FreeSlots() .. " free" end,
-            tooltip = { "Left-click: open your bags", "Right-click: settings" },
+            tooltip = { "Click: settings" },
         }, BW.db)
     end
 end

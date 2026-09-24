@@ -12,15 +12,42 @@ BW.questWanted = {}     -- [name key] = quest title, from the quest log right no
 -- quest log we can't tell a turn-in trade good from junk (see BW.KeepReason).
 BW.questScanOk = false
 
--- Items classic quests ask for that look like plain trade goods. Small on purpose: the learned list
--- does the real work, and this only covers a new character's first hours.
-local SEED = {
-    "linen cloth", "wool cloth", "silk cloth", "mageweave cloth", "runecloth",
-    "tough wolf meat", "stringy wolf meat", "chunk of boar meat", "boar meat", "lean wolf flank",
-    "small egg", "bear meat", "crag boar rib", "coyote meat", "crawler meat", "murloc eye",
-    "light leather", "medium leather", "ruined pelt", "light hide", "small spider leg",
-    "copper bar", "rough stone", "coarse stone", "kodo horn", "bloodscalp ear",
+-- Items classic quests ask for that look like plain trade goods. Item IDs, not names: names are
+-- localised, and a keep rule that only works in English is worse than useless. The IDs were read
+-- out of the Forever item data (build 69893). Small on purpose: the learned list does the real
+-- work, and this only covers a new character's first hours.
+local SEED_IDS = {
+    [2589] = true,      -- Linen Cloth
+    [2592] = true,      -- Wool Cloth
+    [4306] = true,      -- Silk Cloth
+    [4338] = true,      -- Mageweave Cloth
+    [14047] = true,     -- Runecloth
+    [750] = true,       -- Tough Wolf Meat
+    [2672] = true,      -- Stringy Wolf Meat
+    [769] = true,       -- Chunk of Boar Meat
+    [1015] = true,      -- Lean Wolf Flank
+    [6889] = true,      -- Small Egg
+    [3173] = true,      -- Bear Meat
+    [2886] = true,      -- Crag Boar Rib
+    [2673] = true,      -- Coyote Meat
+    [2674] = true,      -- Crawler Meat
+    [730] = true,       -- Murloc Eye
+    [2318] = true,      -- Light Leather
+    [2319] = true,      -- Medium Leather
+    [4865] = true,      -- Ruined Pelt
+    [783] = true,       -- Light Hide
+    [5465] = true,      -- Small Spider Leg
+    [2840] = true,      -- Copper Bar
+    [2835] = true,      -- Rough Stone
+    [2836] = true,      -- Coarse Stone
+    [15852] = true,     -- Kodo Horn
+    [1519] = true,      -- Bloodscalp Ear
 }
+
+--- Is this one of the trade goods classic quests are known to ask for? Works in every language.
+function BW.IsSeededQuestItem(itemID)
+    return itemID ~= nil and SEED_IDS[itemID] == true
+end
 
 --- "Tough Wolf Meat: 3/8" -> "tough wolf meat". Objective text always ends in the counter, in every
 --- locale, so only that tail is cut; nothing else is guessed from the text.
@@ -130,13 +157,4 @@ function BW.LearnFromQuestFrame(event)
             if name then BW.Learn(name, title) end
         end
     end
-end
-
---- Fill the seed list into a fresh database, once.
-function BW.SeedLearned()
-    if not BW.db or BW.db.seeded then return end
-    for _, name in ipairs(SEED) do
-        if BW.db.learned[name] == nil then BW.db.learned[name] = true end
-    end
-    BW.db.seeded = true
 end

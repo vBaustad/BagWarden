@@ -15,12 +15,15 @@ BW.itemInfo = {}
 function BW.ItemInfo(link, itemID)
     local cached = BW.itemInfo[itemID]
     if cached then return cached end
-    local name, _, quality, _, _, _, _, maxStack, _, _, sellPrice, classID, subclassID, bindType =
-        C_Item.GetItemInfo(link or itemID)
+    -- isCraftingReagent is the same flag that puts the green "Crafting Reagent" line on the
+    -- tooltip, so we never have to read the tooltip text for it.
+    local name, _, quality, _, _, _, _, maxStack, _, _, sellPrice, classID, subclassID, bindType,
+        _, _, isCraftingReagent = C_Item.GetItemInfo(link or itemID)
     if not name then return nil end
     cached = {
         name = name, quality = quality, maxStack = maxStack or 1, sellPrice = sellPrice or 0,
         classID = classID, subclassID = subclassID, bindType = bindType,
+        craftingReagent = isCraftingReagent and true or false,
     }
     BW.itemInfo[itemID] = cached
     return cached
@@ -64,6 +67,7 @@ function BW.ScanBags()
                     classID = details and details.classID,
                     subclassID = details and details.subclassID,
                     bindType = details and details.bindType,
+                    craftingReagent = details and details.craftingReagent or false,
                     -- The client hasn't sent this item's details yet: we know too little to judge it.
                     incomplete = details == nil,
                     isQuestItem = quest and quest.isQuestItem or false,
@@ -92,19 +96,6 @@ function BW.TotalSlots()
         total = total + (C_Container.GetContainerNumSlots(bag) or 0)
     end
     return total
-end
-
---- Are two part-stacks of the same item lying around? BagWarden doesn't join them - Blizzard's sort
---- button does, and it sits right next to ours - but the tooltip mentions it when it's worth doing.
-function BW.HasPartialStacks(items)
-    local partial = {}
-    for _, item in ipairs(items or {}) do
-        if (item.maxStack or 1) > 1 and item.count < item.maxStack then
-            if partial[item.itemID] then return true end
-            partial[item.itemID] = true
-        end
-    end
-    return false
 end
 
 --- Names are compared case- and space-insensitively, and always in full: "Wolf Meat" must never

@@ -14,6 +14,8 @@ local POOR = Enum.ItemQuality and Enum.ItemQuality.Poor or 0
 
 --- Sell the greys, once, when a merchant opens. Returns how many stacks went and what they made.
 function BW.SellGreys()
+    -- Same rule as deleting: a self test sells nothing, whatever it calls.
+    if BW.testing then return 0, 0 end
     if not (BW.db and BW.db.sellGreys) then return 0, 0 end
     if not MerchantFrame or not MerchantFrame:IsShown() then return 0, 0 end
 

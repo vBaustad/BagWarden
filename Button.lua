@@ -27,8 +27,9 @@ local function SmallFrom(tooltip, first)
     end
 end
 
---- A few short lines: what BagWarden is, how full the bags are, and what one click does.
---- Everything else (what's protected, what has been deleted) lives on the settings page.
+--- A few short lines, and nothing else: what BagWarden is, how full the bags are, what this click
+--- does. The tooltip is read mid-play, so every line that isn't about the click costs attention.
+--- Anything explanatory (what's protected and why, what has been deleted) lives on the settings page.
 function BW.FillTooltip(tooltip)
     if BW.planStale then BW.PlanNow() end
     local plan = BW.plan
@@ -44,7 +45,7 @@ function BW.FillTooltip(tooltip)
     if plan.target then
         local target = plan.target
         local link = target.item.link or target.item.name or "?"
-        tooltip:AddLine(string.format("Delete %s - %s", link, BW.Coin(target.value or 0)), 1, 0.82, 0)
+        tooltip:AddLine(string.format("Delete %s - %s", link, BW.Coin(target.real or target.value or 0)), 1, 0.82, 0)
         click = "Left-click: delete this item"
     else
         tooltip:AddLine("Nothing to free.", 0.8, 0.8, 0.8)
@@ -53,12 +54,12 @@ function BW.FillTooltip(tooltip)
     if not BW.deleteEnabled then
         tooltip:AddLine("Test build: deletes nothing yet.", 1, 0.4, 0.4)
     end
-    -- Joining part-stacks is the sort button's job, not ours.
-    if plan.couldMerge then
-        tooltip:AddLine("Tip: the sort button merges part-stacks.", 0.6, 0.6, 0.6)
-    end
     if click then
         tooltip:AddLine(click, 0.6, 0.6, 0.6)
+        -- Only worth saying when the next click would actually stop and ask.
+        if plan.action == "confirm" then
+            tooltip:AddLine("Ctrl-click: delete without asking", 0.6, 0.6, 0.6)
+        end
         tooltip:AddLine("Right-click: never delete this item", 0.6, 0.6, 0.6)
     end
     SmallFrom(tooltip, 2)
@@ -68,8 +69,9 @@ end
 -- The click
 -- ---------------------------------------------------------------------------
 --- What one click does. `fromHardware` is true when we're inside the player's own click or
---- keypress, which is the only context the client lets an addon delete in.
-function BW.ReportPlan(fromHardware)
+--- keypress, which is the only context the client lets an addon delete in. `skipAsk` is a held
+--- Ctrl: it skips the QUESTION, never a protection - anything BagWarden keeps is still kept.
+function BW.ReportPlan(fromHardware, skipAsk)
     -- Always work from a scan taken now, never from whatever the last bag update left behind.
     local plan = BW.PlanNow()
 
@@ -83,13 +85,13 @@ function BW.ReportPlan(fromHardware)
         BW.Print("deleting is off in this test build. Nothing was touched.")
         return
     end
-    if plan.action == "confirm" then
+    if plan.action == "confirm" and not skipAsk then
         -- The popup's own Delete button is the player's click, so the deletion happens there.
         BW.AskThenDelete(plan.target)
         return
     end
     -- One click, one stack. DeleteStack verifies the slot again and refuses if anything moved.
-    BW.DeleteStack(plan.target, fromHardware)
+    BW.DeleteStack(plan.target, fromHardware, plan.action == "confirm" and skipAsk or nil)
 end
 
 local function OnClick(_, mouse)
@@ -105,12 +107,8 @@ local function OnClick(_, mouse)
         return
     end
     -- Inside the button's OnClick: a real hardware event, which is what deleting needs.
-    BW.ReportPlan(true)
-end
-
---- The keybinding (Bindings.xml). A keypress is a hardware event too.
-function BW.FreeSlotFromBinding()
-    BW.ReportPlan(true)
+    -- Ctrl held means "don't ask me", read at the moment of the click.
+    BW.ReportPlan(true, IsControlKeyDown())
 end
 
 -- ---------------------------------------------------------------------------
@@ -184,13 +182,33 @@ end
 -- single bag, 150 or 330 on the combined window), so setting it once never sticks. We hook that
 -- method on each bag frame we meet and narrow it afterwards, which survives reopening and the
 -- combined/separate toggle. It's a plain EditBox, so nothing here is protected.
-BW.SEARCH_WIDTH = 60
+-- Wide enough to read a few characters of what you typed - the first try at 60 showed "Se...".
+BW.SEARCH_WIDTH = 120
 local BUTTON_ROOM = 35      -- the button (28) plus the gap to the search box (7)
+-- Where the right-aligned box ends: clear of the sort button, which Blizzard puts at TOPRIGHT -9
+-- and is 28 wide, plus a gap.
+local RIGHT_INSET = -(9 + 28 + 6)
+local SEARCH_Y = -37        -- the row Blizzard puts the box on, on both layouts
 local hookedSearch = {}
+
+--- Only the combined bag window is crowded enough to be worth rearranging. The separate bags have
+--- room to spare, so Blizzard's box is left exactly as it is there.
+local function IsCombined(host)
+    if host.IsCombinedBagContainer then
+        local ok, combined = pcall(host.IsCombinedBagContainer, host)
+        if ok then return combined end
+    end
+    return host == ContainerFrameCombinedBags
+end
+
+--- Should we be rearranging this window's search box at all?
+local function Rearranging(host)
+    return BW.db and BW.db.smallSearch and IsCombined(host)
+end
 
 --- Blizzard anchors the search box to the host's TOPLEFT (x = 42 on a single bag, 62 on the combined
 --- window), which leaves no room for a button to its left. Slide it right by just enough, so our
---- button never lands on the bag's portrait or title.
+--- button never lands on the bag's portrait or title. Only used when we aren't right-aligning it.
 local function MakeRoom(box, host)
     local point, relativeTo, relativePoint, x, y = box:GetPoint(1)
     if not point or relativeTo ~= host then return end
@@ -201,8 +219,15 @@ local function MakeRoom(box, host)
     end
 end
 
---- Put the search box where BagWarden needs it: narrowed when the setting is on, and always pushed
---- far enough right that the button fits beside it. Blizzard re-runs SetSearchBoxPoint on every bag
+--- Narrow the box and move it to the right end of the row, so the box, our button and the sort
+--- button read as one group and the title keeps the space it needs.
+local function ShrinkRight(box, host)
+    box:SetWidth(BW.SEARCH_WIDTH)
+    box:ClearAllPoints()
+    box:SetPoint("TOPRIGHT", host, "TOPRIGHT", RIGHT_INSET, SEARCH_Y)
+end
+
+--- Put the search box where BagWarden needs it. Blizzard re-runs SetSearchBoxPoint on every bag
 --- update, so the same work is hooked onto that call and survives reopening and the layout toggle.
 function BW.ApplySearchBox(host)
     local box = BagItemSearchBox
@@ -211,17 +236,18 @@ function BW.ApplySearchBox(host)
         hookedSearch[host] = true
         hooksecurefunc(host, "SetSearchBoxPoint", function(self, searchBox)
             if not searchBox then return end
-            if BW.db and BW.db.smallSearch then searchBox:SetWidth(BW.SEARCH_WIDTH) end
-            MakeRoom(searchBox, self)
+            if Rearranging(self) then ShrinkRight(searchBox, self) else MakeRoom(searchBox, self) end
             -- The box just moved or resized, so follow it. This also runs during the bag frame's own
             -- OnShow, which is what puts the button in its final place in that very first frame.
             if button and button:GetParent() == self then Anchor(self) end
         end)
     end
-    if BW.db and BW.db.smallSearch then
-        box:SetWidth(BW.SEARCH_WIDTH)
-    elseif host.SetSearchBoxPoint and box.anchorBag == host then
-        -- Back to Blizzard's own size, then make room again.
+    if Rearranging(host) then
+        ShrinkRight(box, host)
+        return
+    end
+    -- Not ours to rearrange: give Blizzard's own width and place back, then just make room beside it.
+    if host.SetSearchBoxPoint and box.anchorBag == host then
         box:ClearAllPoints()
         host:SetSearchBoxPoint(box)
     end
@@ -272,11 +298,18 @@ local function Build()
     button:SetScript("OnMouseDown", function() IconAt(1, -1) end)
     button:SetScript("OnMouseUp", function() IconAt(0, 0) end)
 
+    -- This button destroys things, so it must not read as just another bronze button beside the
+    -- sort button. The body is tinted red and the hover glow with it; the gold pack on top keeps
+    -- its own colours, so the picture stays readable.
+    button:GetNormalTexture():SetVertexColor(1, 0.45, 0.4)
+    button:GetPushedTexture():SetVertexColor(1, 0.45, 0.4)
+
     button:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
     local highlight = button:GetHighlightTexture()
     highlight:ClearAllPoints()
     highlight:SetSize(24, 23)
     highlight:SetPoint("CENTER")
+    highlight:SetVertexColor(1, 0.3, 0.25)
     button:SetScript("OnClick", OnClick)
     button:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -313,7 +346,6 @@ loader:RegisterEvent("PLAYER_LOGIN")
 loader:SetScript("OnEvent", function()
     Build()
     BW.ScanQuestLog()
-    BW.SeedLearned()
     BW.Refresh()
 end)
 
@@ -371,8 +403,63 @@ function BW.SmokeTest()
         BW.Print("next: nothing")
     end
 
+    BW.TestStacks()
     BW.TestProfessions()
+    BW.TestSynergies()
     BW.TestTooltip()
+end
+
+--- The same checks as /bagw test, for LibForever's /yippyapp test: quiet, and guaranteed harmless.
+--- Returns ok, message. Three things make "harmless" true rather than hoped for:
+---   * BW.testing is set for the duration, and DeleteStack and SellGreys refuse outright while it is;
+---   * the deletion log's length is compared before and after, so a delete that somehow happened
+---     would fail the test rather than pass quietly;
+---   * the flag is cleared whether the checks pass, fail or error.
+function BW.SelfTest()
+    local logBefore = (BW.db and BW.db.log) and #BW.db.log or 0
+    local slotsBefore = BW.FreeSlots()
+
+    -- Collect the lines instead of printing them: /yippyapp test runs six addons.
+    local lines, realPrint = {}, BW.Print
+    BW.Print = function(fmt, ...)
+        lines[#lines + 1] = select("#", ...) > 0 and fmt:format(...) or fmt
+    end
+    BW.testing = true
+    local ok, err = pcall(BW.SmokeTest)
+    BW.testing = nil
+    BW.Print = realPrint
+
+    if not ok then return false, tostring(err) end
+    local logAfter = (BW.db and BW.db.log) and #BW.db.log or 0
+    if logAfter ~= logBefore then return false, "the self test deleted something - that must never happen" end
+    if BW.FreeSlots() ~= slotsBefore then return false, "the bags changed during the self test" end
+    for _, line in ipairs(lines) do
+        if line:find("FAILED") then return false, line end
+    end
+    return true, string.format("%d checks, nothing deleted", #lines)
+end
+
+--- Two stacks of the same item: the smaller one must always be the one offered, because both free
+--- exactly one slot. The case this was written for: a full 20 of Roasted Boar Meat was offered while
+--- 13 of it sat two slots away, because the 13 was being valued as if it were already full.
+function BW.TestStacks()
+    local function case(label, stacks)
+        local items = {}
+        for i, stack in ipairs(stacks) do
+            items[i] = {
+                bag = 0, slot = i, itemID = stack[1], count = stack[2], maxStack = stack[3] or 20,
+                sellPrice = stack[4] or 6, name = stack[5] or "Test Item", quality = 1,
+            }
+        end
+        local plan = BW.Plan(items)
+        local target = plan.target
+        BW.Print("stacks (%s): offers %s", label,
+            target and string.format("%dx %s worth %s", target.item.count, target.item.name,
+                BW.Coin(target.real)) or "nothing")
+    end
+    case("20 and 13 of one item", { { 1, 20, 20, 6, "Boar Meat" }, { 1, 13, 20, 6, "Boar Meat" } })
+    case("13 and 5 of one item", { { 1, 13, 20, 6, "Boar Meat" }, { 1, 5, 20, 6, "Boar Meat" } })
+    case("two full stacks", { { 1, 20, 20, 6, "Boar Meat" }, { 1, 20, 20, 6, "Boar Meat" } })
 end
 
 --- Build the tooltip for real, once normally and once with the coin API taken away, so a missing

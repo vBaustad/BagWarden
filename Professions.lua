@@ -14,26 +14,34 @@ local CLASS_WEAPON, CLASS_TRADE_GOODS, CLASS_RECIPE = 2, 7, 9
 local SUB_WEAPON_MISC, SUB_FISHING_POLE, SUB_ENCHANTING_ROD = 14, 20, 12
 
 -- Tools the item classes don't catch: they sit in classes shared with ordinary goods, so they're
--- listed by ID. Philosopher's Stone is armour (a trinket), the Micro-Adjustor is a trade good part.
+-- listed by ID (read out of the Forever item data, build 69893). Philosopher's Stone is armour (a
+-- trinket), the Micro-Adjustor is a trade-good part, Flint and Tinder is a trade good.
 local TOOL_IDS = {
     [9149] = true,      -- Philosopher's Stone
     [13503] = true,     -- Alchemist's Stone
     [10498] = true,     -- Gyromatic Micro-Adjustor
+    [4471] = true,      -- Flint and Tinder
     [5956] = true,      -- Blacksmith Hammer
     [2901] = true,      -- Mining Pick
     [7005] = true,      -- Skinning Knife
     [6219] = true,      -- Arclight Spanner
     [6218] = true,      -- Runed Copper Rod
+    [6256] = true,      -- Fishing Pole
 }
 
--- Backup by name, for anything the data classes oddly.
-local TOOL_NAMES = {
+-- English names, as a LAST resort behind the IDs and the item classes above. Item names are
+-- localised, so this list does nothing on a non-English client - which is why it may only ever ADD
+-- a keep. Nothing here decides that an item can be deleted, so its failure mode is a kept item.
+local TOOL_NAMES_ENGLISH = {
     ["mining pick"] = true, ["skinning knife"] = true, ["blacksmith hammer"] = true,
     ["arclight spanner"] = true, ["gyromatic micro-adjustor"] = true, ["jeweler's kit"] = true,
     ["philosopher's stone"] = true, ["alchemist's stone"] = true, ["flint and tinder"] = true,
     ["simple fishing pole"] = true, ["fishing pole"] = true, ["blacksmithing hammer"] = true,
 }
 
+-- Also English-only, and also add-only: the tooltip patterns below ("+5 Mining", "Requires
+-- Engineering") never make an item deletable, they only keep one. The class rules carry every
+-- language.
 local PROFESSIONS = {
     "Mining", "Herbalism", "Skinning", "Fishing", "Cooking", "First Aid", "Blacksmithing",
     "Leatherworking", "Tailoring", "Engineering", "Alchemy", "Enchanting", "Jewelcrafting",
@@ -45,7 +53,7 @@ BW.professionCache = {}     -- [itemID] = reason string, or false for "nothing t
 --- The profession reason from the item's own class, or nil.
 local function ByClass(item)
     if TOOL_IDS[item.itemID] then return "profession tool" end
-    if item.name and TOOL_NAMES[BW.NameKey(item.name)] then return "profession tool" end
+    if item.name and TOOL_NAMES_ENGLISH[BW.NameKey(item.name)] then return "profession tool" end
     if item.classID == CLASS_RECIPE then return "recipe" end
     if item.classID == CLASS_WEAPON then
         if item.subclassID == SUB_FISHING_POLE then return "fishing pole" end

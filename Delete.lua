@@ -22,6 +22,7 @@ local function ReadSlot(bag, slot)
         maxStack = details and details.maxStack or 1,
         classID = details and details.classID, subclassID = details and details.subclassID,
         bindType = details and details.bindType, incomplete = details == nil,
+        craftingReagent = details and details.craftingReagent or false,
         isQuestItem = quest and quest.isQuestItem or false,
         questID = quest and quest.questID or nil,
     }
@@ -72,7 +73,7 @@ function BW.AskThenDelete(entry)
     if not (entry and entry.item) then return end
     local dialog = StaticPopup_Show("BAGWARDEN_CONFIRM_DELETE",
         string.format("%dx %s (%s)", entry.item.count, entry.item.link or entry.item.name or "?",
-            BW.Coin(entry.value or 0)),
+            BW.Coin(entry.real or entry.value or 0)),
         entry.reason or "", entry)
     if dialog and LIB and LIB.RegisterPopup then LIB.RegisterPopup(dialog) end
 end
@@ -81,7 +82,15 @@ end
 --- `fromHardware` says the caller is running inside the player's own click or keypress, which is
 --- what DeleteCursorItem needs: it silently does nothing when called from a slash command or a
 --- timer. The one place we can't ask the client, so the callers have to be honest.
-function BW.DeleteStack(entry, fromHardware)
+--- `skippedAsk` means the player held Ctrl to skip the question. It changes nothing below: every
+--- check still runs, and it is only recorded in the log so the deletion can be accounted for.
+function BW.DeleteStack(entry, fromHardware, skippedAsk)
+    -- A self test must never destroy anything. This is the assertion, not a convention: whatever a
+    -- future test step calls, it cannot get past here while BW.testing is set.
+    if BW.testing then
+        BW.Print("refused: nothing is deleted while the self test runs.")
+        return false
+    end
     if fromHardware == false then
         BW.Print("the game only lets an addon delete inside a real click or keypress.")
         BW.Print("use the button in your bag window, or bind a key to BagWarden in the keybindings.")
@@ -127,7 +136,7 @@ function BW.DeleteStack(entry, fromHardware)
     end
 
     -- Write the log BEFORE the delete: if anything after this errors, the record still exists.
-    BW.LogDeletion(item, entry.value or 0)
+    BW.LogDeletion(item, entry.real or entry.value or 0, skippedAsk)
     DeleteCursorItem()
 
     -- DeleteCursorItem fails silently when it isn't allowed, and the item simply stays on the
@@ -140,7 +149,8 @@ function BW.DeleteStack(entry, fromHardware)
         return false
     end
 
-    BW.Print("deleted %dx %s (%s).", item.count, item.name or "?", BW.Coin(entry.value or 0))
+    BW.Print("deleted %dx %s (%s)%s.", item.count, item.name or "?",
+        BW.Coin(entry.real or entry.value or 0), skippedAsk and " - Ctrl-click, no question asked" or "")
     BW.Refresh()
     return true
 end

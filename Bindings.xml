@@ -1,5 +1,5 @@
 <Bindings>
-	<Binding name="BAGWARDEN_FREE_SLOT" category="BagWarden" header="BAGWARDEN">
-		BagWardenFreeSlot()
+	<Binding name="BAGWARDEN_FREE_SLOT" category="BINDING_HEADER_BAGWARDEN">
+		BagWardenFreeSlot();
 	</Binding>
 </Bindings>

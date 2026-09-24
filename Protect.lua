@@ -5,11 +5,10 @@
 -- When in doubt we keep the item. A wrong keep costs a bag slot; a wrong delete can cost a quest.
 local ADDON, BW = ...
 
-local POOR = Enum.ItemQuality and Enum.ItemQuality.Poor or 0
-local COMMON = Enum.ItemQuality and Enum.ItemQuality.Common or 1
 local UNCOMMON = Enum.ItemQuality and Enum.ItemQuality.Uncommon or 2
 
 local CLASS_QUEST = 12          -- item class "Quest"
+local CLASS_CONSUMABLE = 0      -- item class "Consumable": food, drink, potions, bandages, scrolls
 local BIND_QUEST = 4            -- bindType "Quest"
 
 -- Other addons can add a keep rule: fn(item) -> reason text, or nil. Used by the YippYapp
@@ -56,29 +55,66 @@ function BW.KeepReason(item)
     -- 3. Your own never-delete list.
     if BW.IsIgnored(item.itemID) then return "hard", "on your never-delete list" end
 
-    -- 4. Quality and value.
-    if (item.quality or 0) >= UNCOMMON then return "hard", "green or better" end
+    -- 4. Quality and value. Green is the highest BagWarden will ever touch, and only when the player
+    -- has said so; blue and better are never deletable, whatever the settings say.
+    local quality = item.quality or 0
+    if quality > UNCOMMON then return "hard", "too good to delete" end
+    if quality == UNCOMMON and not (BW.db and BW.db.allowGreen) then return "hard", "green or better" end
     if item.hasNoValue or (item.sellPrice or 0) <= 0 then return "hard", "can't be sold" end
     if item.locked then return "hard", "in use" end
 
     -- 5. Profession gear, and what the other YippYapp addons say. A rule that errors keeps the item:
-    -- we asked it a question and got no answer.
+    -- we asked it a question and got no answer. These come BEFORE our own reagent rule on purpose:
+    -- a provider knows why it wants the item ("needed for your route") and we only know that it's a
+    -- reagent, so the better reason wins when both would answer.
     for _, fn in ipairs(BW.protectors) do
         local ok, reason = pcall(fn, item)
         if not ok then return "hard", "a keep rule failed" end
         if reason then return "hard", reason end
     end
 
-    -- 6. Soft: an item some quest has asked for before, on this account.
+    -- 5b. Crafting reagents, three ways (BW.db.reagentKeep):
+    --   "all"  - every reagent is kept.
+    --   "mine" - only the ones your own professions use. Skillwright's provider claims those in
+    --            step 5 above, so anything reaching here is NOT one of yours and falls through to
+    --            the ask tier. But without Skillwright published we cannot tell whose a reagent is,
+    --            and guessing "someone else's" would delete your ore. So with no provider, keep all.
+    --   "none" - no special treatment.
+    if item.craftingReagent then
+        local mode = (BW.db and BW.db.reagentKeep) or "mine"
+        if mode == "all" then
+            return "hard", "crafting reagent"
+        elseif mode == "mine" and not (BW.ProviderPresent and BW.ProviderPresent("SkillwrightReagents")) then
+            return "hard", "crafting reagent"
+        end
+    end
+
+    -- 6. Soft: an item some quest has asked for before, on this account, or one of the trade goods
+    -- classic quests are known to want (by item ID, so it holds in every language).
     local learned = BW.LearnedFor(item.name)
     if learned then
         return "soft", type(learned) == "string" and ("used by: " .. learned) or "some quests use this item"
     end
+    if BW.IsSeededQuestItem(item.itemID) then return "soft", "some quests use this item" end
 
-    -- 7. Soft: white items always ask first.
-    if (item.quality or 0) >= COMMON then return "soft", "not junk" end
+    -- 7. Soft: things a white item can be that you'd miss. Being white is not itself a reason to
+    -- ask - a worn-out white belt worth a copper is junk, and the tooltip already names what the
+    -- click deletes - but these two are worth a question:
+    --   * crafting reagents (the green "Crafting Reagent" line; isCraftingReagent from GetItemInfo,
+    --     so it needs no tooltip and works in every language);
+    --   * consumables: food, water, potions, bandages, scrolls. They sell for almost nothing, so
+    --     they sort to the front of the queue, and they're exactly what you miss out in the field.
+    if item.craftingReagent then return "soft", "crafting reagent" end
+    if item.classID == CLASS_CONSUMABLE then return "soft", "something you use" end
+    -- Green only gets here at all when the player allowed it, and then it always asks.
+    if quality >= UNCOMMON then return "soft", "green - you allowed these" end
 
-    -- Grey, sellable, no quest: this is what BagWarden is for.
-    if (item.quality or 0) == POOR then return nil, nil end
-    return "soft", "not junk"
+    -- 8. Soft: whatever the player asked to be asked about. "askFrom" is a quality: POOR means ask
+    -- about everything, COMMON means ask about white items too, and UNCOMMON (the default) means
+    -- don't ask on quality alone. Green is handled above, because it always asks.
+    local askFrom = BW.db and BW.db.askFrom or UNCOMMON
+    if (item.quality or 0) >= askFrom then return "soft", "you asked to be asked first" end
+
+    -- Sellable, no quest, not a reagent: this is what BagWarden is for.
+    return nil, nil
 end
