@@ -1,6 +1,6 @@
 # BagWarden
 
-## Unreleased
+## 0.1.0-beta4
 
 - On the settings page, the paragraph explaining the three reagent choices now sits with them
   instead of reading as part of the profession-gear description above it.
