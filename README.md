@@ -20,9 +20,10 @@ does it.
 - Items some quest has asked for before on this account: BagWarden remembers them as you play and
   always asks before one of those goes.
 
-Everything deletable is ranked by what the slot is really worth, whether the item is grey or
+Everything ordinary is ranked by what the slot is really worth, whether the item is grey or
 white - freeing a slot should cost you as little as possible, and a grey item is not
-automatically the cheapest thing you carry.
+automatically the cheapest thing you carry. Crafting reagents, trade goods, and anything another
+YippYapp addon has an opinion about are ordered separately; "How it picks" below says how.
 
 Before it deletes a crafting reagent, food, drink, a potion, a bandage or anything a quest has ever
 asked you for, it asks, in a popup that can also put the item on the never-delete list. A setting
@@ -47,7 +48,9 @@ deciding, it deletes nothing and tells you why.
 Everything ordinary is offered first, cheapest slot first - a grey item's vendor price is exactly
 what it is worth, since vendoring is all a grey is for. Crafting reagents and trade goods come after
 that whatever they cost, because their price tag says the least about them, and anything another
-YippYapp addon calls critical (your buff food) is offered only when nothing else is left.
+YippYapp addon calls critical (your buff food) is offered only when nothing else is left. Ahead of
+all of it goes anything one of them calls spare - a surplus stack someone can replace for nothing,
+like the spare conjured bread beside the stack your AutoFeed macro eats, which stays.
 
 A stack is judged by what the slot is worth: sell price times how many you hold. A stack that is
 already at least half full, and that you are still picking up, counts as what it will be worth full
