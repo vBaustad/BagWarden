@@ -7,18 +7,20 @@
 
 - Anything another YippYapp addon calls spare - a surplus stack someone can replace for nothing -
   is now offered before ordinary junk, however little it sells for. With AutoFeed installed that
-  includes a mage's conjured food and water, which BagWarden would otherwise keep for having no
-  sell price. Those always ask before they go, even with Ctrl held, and the question says which
-  addon vouched for them.
+  covers spare conjured food and water, which BagWarden would otherwise keep for having no sell
+  price. The conjured stack your AutoFeed macro actually eats is still kept, because AutoFeed also
+  says the macro uses it - so this is about the surplus beside it. Anything unlocked this way always
+  asks before it goes, even with Ctrl held, and the question says which addon vouched for it.
 
 - The tooltip now names the next item the instant you delete one, without moving the mouse, and the
   red slot in your bags moves with it. Before, a second click could take something the tooltip
   wasn't describing. Same for a Ctrl-click and for the keybind.
 
-- Reagents and trade goods are offered last, after everything ordinary. A grey item's vendor price
-  is exactly what it is worth, because vendoring is all a grey is for - but a Murloc Eye's 16c says
-  almost nothing about what it is worth to someone levelling Alchemy. So a 2s40 grey knife now goes
-  before a 16c reagent, while a 1c belt still goes before a 97c grey hammer.
+- Reagents and trade goods are offered after everything ordinary, whatever they sell for. A grey
+  item's vendor price is exactly what it is worth, because vendoring is all a grey is for - but a
+  Murloc Eye's 16c says almost nothing about what it is worth to someone levelling Alchemy. So a
+  2s40 grey knife now goes before a 16c reagent, while a 1c belt still goes before a 97c grey
+  hammer. Your buff food still comes after all of it.
 
 ## 0.1.0-beta3
 
