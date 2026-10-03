@@ -24,9 +24,23 @@ local defaults = {
     askFrom = 2,
     allowGreen = false,     -- let green items be deleted at all; they always ask first (Protect.lua)
     ignore = {},            -- [itemID] = true, never delete (right-click the button, or the popup)
+    scrap = {},             -- [itemID] = true, sell this at the next merchant (Alt-click in your bags)
     log = {},               -- what we deleted, newest first: { link, name, count, value, when }
     learned = {},           -- ["item name in lower case"] = "quest title", account-wide, see Quests.lua
     minimap = {},         -- LibDBIcon's own store, filled by LIB.RegisterMinimapButton
+
+    -- The on-screen row (Bar.lua). Flat keys rather than one nested table on purpose: PrepareDB
+    -- merges shallowly, so a key added later reaches everyone who already has the row turned on -
+    -- a nested table would only ever be filled in for a brand-new install.
+    barEnabled = true,      -- on, but silent until the bags are nearly full (barFreeSlots below)
+    barCount = 4,           -- how many icons, 1-10
+    barSize = 36,           -- pixels per icon
+    barDirection = "RIGHT", -- which way the row grows from its first icon: RIGHT/LEFT/DOWN/UP
+    barHideInCombat = true, -- deleting is refused in combat anyway, so the icons can only be clutter
+    barFreeSlots = 4,       -- show only at or below this many free slots; 0 means always show
+    barLocked = false,      -- stop it being dragged once it is where you want it
+    barShowPrice = false,   -- the price under each icon, as well as in the tooltip
+    barShowFree = true,     -- the free-slot line above the row: amber when low, red when full
 }
 
 local migrations = {
@@ -38,6 +52,35 @@ local migrations = {
         end
         db.keepReagents = nil
     end,
+
+    -- 3: the on-screen row went from off-by-default to on, showing itself only once four slots or
+    -- fewer are left. A default change reaches a new install on its own; it does not reach anyone
+    -- whose saved variables already hold the old value, which is everyone who has run the build
+    -- where the row first appeared.
+    --
+    -- This cannot tell "never touched it" from "deliberately turned it off", so it only moves a
+    -- setting still sitting on the exact old defaults - and it is only honest to do at all because
+    -- the row has never been in a release. Nobody has had the chance to form a preference yet. Do
+    -- NOT copy this for a setting that has shipped.
+    [3] = function(db)
+        if db.barEnabled == false and (db.barFreeSlots or 0) == 0 then
+            db.barEnabled, db.barFreeSlots = true, 4
+        end
+    end,
+
+    -- 4 is DELIBERATELY EMPTY, and must stay spent rather than be tidied back to 3.
+    --
+    -- It briefly cleared `notch`, `notchPrefs` and `notchHidden` - the launcher bar's position, its
+    -- style, and which icons were tucked away. That was withdrawn on ownership, not on taste: the
+    -- library WRITES all three into our table (Launcher.lua:54-80), the same way it writes
+    -- `welcomeSeen` (Welcome.lua:33), so it clears all four once in its own final step. Six addons
+    -- each deciding gave six slightly different saved files for one change - Guildhall had reached
+    -- the opposite conclusion on the same three keys, and both arguments were sound.
+    --
+    -- The number stays at 4 because schema numbers may only ever go forward. A saved file that
+    -- already reached 4 under the old migration would silently skip a future migration 4 if this
+    -- went back to 3, and the files that reached it belong to whoever runs the dev build - the one
+    -- person whose saved variables we most need to be right.
 }
 
 BW.lootSeen = {}            -- [itemID] = time() when we last gained one
@@ -109,6 +152,27 @@ function BW.SetIgnored(itemID, on)
 end
 
 -- ---------------------------------------------------------------------------
+-- The scrap list: sell this, don't make me decide again
+-- ---------------------------------------------------------------------------
+-- Separate from the never-delete list because they are different verbs, not opposites. Scrap says
+-- "sell it", never-delete says "don't destroy it", and an item can honestly be both: a trinket you
+-- want turned into money but never binned. So neither list overrides the other - the only thing
+-- scrap changes is what a merchant visit sells.
+function BW.IsScrap(itemID)
+    return itemID ~= nil and BW.db and BW.db.scrap and BW.db.scrap[itemID] == true
+end
+
+function BW.SetScrap(itemID, on)
+    if not (itemID and BW.db) then return end
+    BW.db.scrap = BW.db.scrap or {}
+    BW.db.scrap[itemID] = on and true or nil
+    -- The coin on the slot has to appear on the same click that put it there, and Refresh is
+    -- debounced - and skipped outright when nothing on screen needs a plan.
+    if BW.MarkScrap then BW.MarkScrap() end
+    BW.Refresh()
+end
+
+-- ---------------------------------------------------------------------------
 -- The log of what was deleted
 -- ---------------------------------------------------------------------------
 BW.LOG_MAX = 200
@@ -139,13 +203,21 @@ end
 -- Events
 -- ---------------------------------------------------------------------------
 --- Rescan the bags and redraw the button. Debounced, because bag updates arrive in bursts, and
---- skipped entirely while no bag window is open: nothing on screen depends on the plan then, and
---- whoever needs one (a tooltip, a click) asks for it with BW.PlanNow.
+--- skipped entirely while nothing on screen depends on the plan: with the bags shut and the row
+--- not showing, whoever needs a plan (a tooltip, a click) asks for one with BW.PlanNow.
+---
+--- The test asks BarShouldShow, not BarWanted, and the difference is the whole cost of the row
+--- being on by default. The row is hidden until four slots are left, and a hidden row needs no
+--- plan - but it does need to know when to appear, and that is BW.FreeSlots: five calls against
+--- the hundred-odd a full scan costs. So with room to spare we pay the five and stop.
+--- It also means no scanning at all during combat while "hide it in combat" is on, which is exactly
+--- when loot is arriving fastest.
 function BW.Refresh()
     LIB.Debounce("BagWarden.refresh", 0.2, function()
-        if not (BW.BagsOpen and BW.BagsOpen()) then
+        if not ((BW.BagsOpen and BW.BagsOpen()) or (BW.BarShouldShow and BW.BarShouldShow())) then
             BW.planStale = true
             if BW.UpdateButton then BW.UpdateButton() end
+            if BW.UpdateBar then BW.UpdateBar() end
             return
         end
         BW.PlanNow()
@@ -179,6 +251,7 @@ function BW.PlanNow()
     BW.plan = BW.Plan(BW.items)
     BW.planStale = false
     if BW.UpdateButton then BW.UpdateButton() end
+    if BW.UpdateBar then BW.UpdateBar() end
     return BW.plan
 end
 
@@ -197,11 +270,10 @@ f:SetScript("OnEvent", function(_, event, arg1)
     if event == "ADDON_LOADED" then
         if arg1 ~= ADDON then return end
         BagWardenDB = BagWardenDB or {}
-        BW.db = LIB.PrepareDB(BagWardenDB, defaults, migrations, 2)
+        BW.db = LIB.PrepareDB(BagWardenDB, defaults, migrations, 4)
     elseif event == "PLAYER_LOGIN" then
         BW.RegisterOptions()
         BW.RegisterMinimap()
-        BW.RegisterWelcome()
         -- /yippyapp test runs every addon's checks in one go; ours is the same set as /bagw test.
         if LIB.RegisterSelfTest then LIB.RegisterSelfTest("BagWarden", BW.SelfTest) end
         BW.Refresh()
@@ -234,11 +306,17 @@ SlashCmdList.BAGWARDEN = function(msg)
         BW.SmokeTest()
     elseif msg == "where" then
         BW.WhereIsButton()
+        if BW.WhereIsBar then BW.Print(BW.WhereIsBar()) end
     elseif msg == "debug" then
         BW.db.debug = not BW.db.debug
         BW.Print("debug %s", BW.db.debug and "on" or "off")
     elseif msg == "settings" or msg == "options" then
         BW.OpenOptions()
+    elseif msg == "sell" then
+        -- What a merchant visit would do, and why anything is held back. Sells nothing, and works
+        -- away from a merchant too - which is the point, since "it did not sell" is reported after
+        -- the fact.
+        BW.SellReport()
     elseif msg == "bags" then
         -- The bags are the player's own window; this is just a convenience for a macro.
         if type(ToggleAllBags) == "function" then ToggleAllBags() end
@@ -247,7 +325,7 @@ SlashCmdList.BAGWARDEN = function(msg)
         -- click or keypress. DeleteStack says so rather than failing silently.
         BW.ReportPlan(false)
     else
-        BW.OnLauncherClick()
+        BW.OnIconClick()
     end
 end
 
@@ -261,17 +339,17 @@ function BagWardenFreeSlot()
     BW.ReportPlan(true, IsControlKeyDown())
 end
 
---- Every icon we own - the minimap button, the YippYapp row, the launcher notch, the addon
---- compartment - opens the settings, whichever mouse button was used. BagWarden has no window of
---- its own: its UI is the button inside Blizzard's bag window, which the player opens themselves.
---- Nothing out here ever deletes.
-function BW.OnLauncherClick()
+--- Every icon we own - the minimap button and the addon compartment - opens the settings, whichever
+--- mouse button was used. BagWarden has no window of its own: its UI is the button inside Blizzard's
+--- bag window, which the player opens themselves. Nothing out here ever deletes.
+--- (Named for the launcher bar until it was removed; the two icons it also served are still here.)
+function BW.OnIconClick()
     BW.OpenOptions()
 end
 
---- What the minimap button, the notch and the compartment say. The bag button has its own tooltip
---- with the next deletion; these only open the settings, so they say so and nothing more.
-function BW.FillLauncherTooltip(tooltip)
+--- What the minimap button and the compartment say. The bag button has its own tooltip with the
+--- next deletion; these only open the settings, so they say so and nothing more.
+function BW.FillIconTooltip(tooltip)
     tooltip:AddLine("BagWarden")
     -- Counting free slots is cheap, so this never needs a scan of its own.
     tooltip:AddLine(string.format("Bags: %d free of %d", BW.FreeSlots(), BW.TotalSlots()), 0.8, 0.8, 0.8)
@@ -279,12 +357,12 @@ function BW.FillLauncherTooltip(tooltip)
 end
 
 function BagWarden_OnAddonCompartmentClick()
-    BW.OnLauncherClick()
+    BW.OnIconClick()
 end
 
 function BagWarden_OnAddonCompartmentEnter(_, button)
     GameTooltip:SetOwner(button, "ANCHOR_LEFT")
-    BW.FillLauncherTooltip(GameTooltip)
+    BW.FillIconTooltip(GameTooltip)
     GameTooltip:Show()
 end
 
@@ -292,37 +370,18 @@ function BagWarden_OnAddonCompartmentLeave()
     GameTooltip:Hide()
 end
 
---- Our page in the shared YippYapp welcome window. BagWarden needs no setup, so it never opens the
---- window by itself; the page waits for /yippyapp or the "Welcome" button.
-function BW.RegisterWelcome()
-    if not LIB.RegisterWelcome then return end
-    LIB.RegisterWelcome({
-        id = "BagWarden", title = "BagWarden", version = 1, order = 40,
-        icon = "Interface\\AddOns\\BagWarden\\Media\\icon",
-        subtitle = "One click, one free bag slot.",
-        blurb = "A button in your bag window frees one slot per click, by deleting the least valuable junk "
-            .. "stack you carry. It tells you which item that is before you click, "
-            .. "and never touches quest items, profession gear, recipes or anything better than green.",
-        onOpen = function() BW.OpenOptions() end,
-    }, BW.db)
-end
+-- The welcome window is gone, so there is no page to register. BagWarden's page had no body of its
+-- own anyway - a title, a one-line subtitle and an Open button - so nothing was lost in the move;
+-- what the addon explains about itself now lives at the bottom of its settings page, where someone
+-- looking for help actually goes. See HELP in Options.lua.
 
 function BW.RegisterMinimap()
     if LIB.RegisterMinimapButton then
         LIB.RegisterMinimapButton("BagWarden", {
             icon = "Interface\\AddOns\\BagWarden\\Media\\minimap",
             label = "BagWarden",
-            OnClick = function() BW.OnLauncherClick() end,
-            OnTooltipShow = function(tooltip) BW.FillLauncherTooltip(tooltip) end,
-        }, BW.db)
-    end
-    if LIB.RegisterLauncher then
-        LIB.RegisterLauncher({
-            id = "BagWarden", label = "BagWarden", order = 40,
-            icon = "Interface\\AddOns\\BagWarden\\Media\\notch",
-            onClick = function() BW.OnLauncherClick() end,
-            status = function() return BW.FreeSlots() .. " free" end,
-            tooltip = { "Click: settings" },
+            OnClick = function() BW.OnIconClick() end,
+            OnTooltipShow = function(tooltip) BW.FillIconTooltip(tooltip) end,
         }, BW.db)
     end
 end

@@ -43,6 +43,56 @@ Before anything goes, BagWarden reads the slot again and checks that it still ho
 the same number of them, and that every protection still passes. If anything changed while you were
 deciding, it deletes nothing and tells you why.
 
+## The scrap list
+
+**Alt-click** any grey or white stack in your bags and it becomes scrap: a gold coin appears in the
+corner of the slot, the next merchant you open buys it, and you never have to decide about that item
+again. Alt-click it again to take it off. The list is account-wide and also shows under "At a
+merchant" in the settings.
+
+Greys and scrap share one limit of twelve stacks per visit, so everything you sell stays in the
+merchant's buyback list until you walk away. Better than white is refused - buyback only saves you
+until you leave the vendor, and a misplaced Alt-click should not be able to sell a blue.
+
+A scrapped item is sold even when BagWarden would otherwise keep it for being a reagent, or food, or
+something a quest once wanted: you named that item, which beats our guess. What no list overrides is
+a hard keep - a quest item in your log, something unsellable, something too good.
+
+## The on-screen row
+
+On by default, and silent until you are down to four free slots. When it appears, BagWarden draws the
+next few stacks it would delete as a row of icons you can put anywhere, so you can clear a slot
+without opening your bags.
+
+- **Ctrl-click** an icon to act on that stack - any of them, not just the first.
+- **Right-click** one to put that item on your never-delete list.
+- **A plain click does nothing.** The bag button deletes on a plain click because you had to open
+  your bags to reach it. A row on the world is easy to hit by accident, so acting there takes Ctrl.
+- The edge says what the click will do. **Grey** is plain junk. **Amber** is something that isn't
+  junk - a reagent, food, an old quest leftover - which a Ctrl-click still deletes, because choosing
+  one icon and holding Ctrl is a decision, not an accident. **Blue** is the two that always stop and
+  ask whatever you hold: anything green, and anything another YippYapp addon unlocked for us.
+
+Above the icons is how much room you have left: grey normally, amber when you are running low, red
+saying "Bags full" when you are out. Running low is whatever you set under "only when free slots are
+under", or five slots if you never set one. When your bags are full and there is nothing BagWarden
+can free, the row stays up to say so rather than hiding for having no icons - that is the moment you
+most want telling.
+
+How many icons, how big, which way the row grows, whether it hides in combat, and whether it stays
+out of sight until you are low on slots are all settings. Drag the row to move it; lock it when it
+is where you want it.
+
+A hidden row costs almost nothing. While it waits for your bags to fill, BagWarden reads only how
+many slots are free - five numbers - rather than reading every slot; the full scan waits until the
+row has something to show, which is when you were about to open your bags anyway. With "hide it in
+combat" on it reads nothing at all during a fight. Setting the row to "always show" opts into the
+full scan on every bag update.
+
+Nothing in BagWarden uses the game's secure or protected frame machinery, so none of it can taint
+your action bars or unit frames. The icons are ordinary buttons; deleting works because the game
+accepts a real click, not because anything is hooked into a protected path.
+
 ## How it picks
 
 Everything ordinary is offered first, cheapest slot first - a grey item's vendor price is exactly

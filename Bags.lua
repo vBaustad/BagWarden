@@ -62,6 +62,7 @@ function BW.ScanBags()
                     quality = info.quality or (details and details.quality) or 0,
                     name = (details and details.name) or info.itemName,
                     link = info.hyperlink,
+                    icon = info.iconFileID,
                     locked = info.isLocked,
                     hasNoValue = info.hasNoValue,
                     sellPrice = details and details.sellPrice or 0,

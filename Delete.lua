@@ -7,6 +7,27 @@
 local ADDON, BW = ...
 local LIB = LibStub("LibForever-1.0")
 
+local UNCOMMON = Enum.ItemQuality and Enum.ItemQuality.Uncommon or 2
+
+--- Can holding Ctrl skip this item's question? Ctrl is the player saying they already know what the
+--- item is - on the bag button it skips the popup, and on an icon in the row it is the only way to
+--- act at all, so it must skip it there too or the row becomes the one place you cannot get on with
+--- things. Two things it can never skip, and both are promises made elsewhere:
+---   * an item another addon unlocked (mustAsk). "It always asks" is the entire reason lifting a
+---     hard keep was allowed in the first place - see the lift in Protect.lua step 4.
+---   * green. The setting that allows greens at all says they always ask "however the other settings
+---     are set", and a held key is no different from a setting.
+--- Everything else - reagents, food, an item some quest once wanted - is a white or grey stack the
+--- tooltip has already named, and Ctrl on that is a decision, not an accident.
+---
+--- Both click paths ask this one function, so the bag button and the row can never disagree about
+--- what a held Ctrl means.
+function BW.AlwaysAsks(entry)
+    if not entry then return false end
+    if entry.mustAsk then return true end
+    return (entry.item and entry.item.quality or 0) >= UNCOMMON
+end
+
 --- Read one slot afresh and build the same record ScanBags would.
 local function ReadSlot(bag, slot)
     local info = C_Container.GetContainerItemInfo(bag, slot)

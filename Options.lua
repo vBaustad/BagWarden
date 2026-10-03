@@ -1,192 +1,436 @@
 -- BagWarden - the settings page in Options -> AddOns -> YippYapp -> BagWarden.
+--
+-- Laid out as rows: a label on the left, its control at one fixed x, every row the same height,
+-- every other row faintly banded so a long list can be scanned rather than read. What a setting
+-- DOES is in the row's tooltip, not printed under it - a paragraph under each of a dozen toggles
+-- turns a page you skim into a page you have to read, and pushes the twelfth setting off the screen.
+--
+-- Prose survives in exactly three places, where a bare label would be a guess: the reagent choice,
+-- the asking-first choice, and the on-screen row. Those three explain a decision the player has to
+-- make, not a switch they can flick and see the result of.
 local ADDON, BW = ...
 local LIB = LibStub("LibForever-1.0")
 
 local category, panel
 
-local function Heading(parent, text)
-    local fs = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    fs:SetText(text)
-    local line = parent:CreateTexture(nil, "ARTWORK")
-    line:SetAtlas("Options_HorizontalDivider")
-    line:SetHeight(1)
-    line:SetPoint("LEFT", fs, "RIGHT", 8, 0)
-    line:SetPoint("RIGHT", parent, "RIGHT", -8, 0)
-    return fs
-end
+-- The in-game explanation of how BagWarden is used, at the bottom of this page. It is written here
+-- rather than moved from the welcome window, because BagWarden's welcome page never had a body -
+-- only a title, a one-line subtitle and an Open button. So this is the first time the addon explains
+-- itself anywhere in the game, which is the thing the welcome removal was meant to protect.
+-- The library owns where it sits and how it wraps; the words are ours.
+local HELP = {
+    { "What it does",
+        "One button in your bag window frees one bag slot per click, by deleting the least valuable "
+        .. "junk stack you carry. The tooltip names the item before you click it, and hovering the "
+        .. "button lights that slot up in red, so nothing happens that you did not read first.\n\n"
+        .. "It never deletes anything you need: quest items, anything a quest in your log asks for, "
+        .. "profession tools and recipes, the reagents your own professions use, anything that cannot "
+        .. "be sold, and anything better than green. When a check cannot be made, the item is kept." },
 
--- The page is hosted in the YippYapp window (LibForever 1.0.3), which decides how wide it is, so
--- every block of text is kept here and re-widthed whenever the page is resized.
--- Two x positions only: LEFT for headings and checkboxes, LEFT + INDENT for the text under a
--- checkbox. Nothing is ever anchored at a negative offset, or it hangs off the page and is clipped.
-local FALLBACK_WIDTH = 540      -- only used until the window sizes us
+    { "Getting started",
+        "There is nothing to set up. Open your bags and the button is next to Blizzard's sort button.\n\n"
+        .. "A plain click frees one slot. Hold Ctrl to skip the question on things that would normally "
+        .. "ask. Right-click the button to put what it was about to delete on your never-delete list. "
+        .. "You can also bind a key: look for \"Free a bag slot\" under BagWarden in the keybindings.\n\n"
+        .. "Alt-click any grey or white stack in your bags to call it scrap - a gold coin marks the "
+        .. "slot, and the next merchant you open buys it." },
+
+    { "Good to know",
+        "BagWarden can only delete inside a real click or keypress. That is the game's rule, not a "
+        .. "setting: deleting from a timer or a chat command silently does nothing. So there is no "
+        .. "\"clean my bags\" button and never will be - one click frees one slot, which is also the "
+        .. "right way round for something that cannot be undone.\n\n"
+        .. "Selling is different, because it can be undone. At a merchant BagWarden sells your greys "
+        .. "and your scrap, up to twelve stacks a visit, so everything stays in the merchant's buyback "
+        .. "list until you walk away.\n\n"
+        .. "Green items are never deleted unless you allow them, and then they always ask first, "
+        .. "however the other settings are set. Blue and better are never deletable at all.\n\n"
+        .. "Everything BagWarden has deleted is listed further up this page, newest first, including "
+        .. "whether Ctrl was held - so \"I never confirmed that\" has an answer." },
+
+    { "With the other YippYapp addons",
+        "BagWarden asks the others what your things are for, and keeps what they vouch for. Skillwright "
+        .. "tells it which reagents your professions actually use, so another profession's ore is not "
+        .. "protected for nothing. AutoFeed tells it which food is your buff food, which is then offered "
+        .. "only when there is nothing else left - and which conjured food is spare, which is offered "
+        .. "first. Guildhall tells it what you have listed. None of them can make something deletable "
+        .. "that BagWarden would otherwise keep, with one exception that always asks first." },
+}
+
+-- The page is hosted in the YippYapp window, which decides how wide it is, so every block of text
+-- is kept and re-widthed when the page is resized.
+-- Nothing is ever anchored at a negative x, or it hangs off the page and is clipped.
+--
+-- The width comes from LIB.OptionsWidth / LIB.OnOptionsResize, never from a number written here.
+-- A hardcoded width is not a harmless approximation: the library's own settings page assumed 600
+-- inside a 544 scroll frame and pushed its per-addon buttons two-thirds off the right edge. A page
+-- that declares a height - ours does - scrolls, so the real width is the frame minus the scrollbar,
+-- and only the library knows that. FALLBACK_WIDTH survives for a client running an older library,
+-- where it is the same guess as before and no worse.
+local FALLBACK_WIDTH = 540      -- only used when the library cannot tell us
 local LEFT, INDENT = 8, 30
+local CONTROL_X = 240           -- where every row's control sits, measured from the row's left
+local ROW_H = 26
 local notes = {}
-
-local function Note(parent, text)
-    local fs = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    fs:SetWidth(FALLBACK_WIDTH - LEFT - INDENT)
-    notes[#notes + 1] = fs
-    fs:SetJustifyH("LEFT")
-    fs:SetSpacing(2)
-    fs:SetText(text)
-    return fs
-end
 
 function BW.RegisterOptions()
     if category or not (Settings and Settings.RegisterCanvasLayoutCategory) then return end
     panel = CreateFrame("Frame")
-    panel:SetWidth(FALLBACK_WIDTH)
-    panel:SetScript("OnSizeChanged", function(self, width)
-        width = width or self:GetWidth()
+    local f = panel
+
+    --- Re-wrap every block of text to the width the page actually has. One function, so the library
+    --- hook and the old-library fallback cannot wrap to two different numbers.
+    local function Relayout(width)
+        width = width or f:GetWidth()
         if not width or width <= 0 then return end
         -- Room for the indent on the left and the same margin again on the right.
         local textWidth = math.max(120, width - LEFT - INDENT - LEFT)
         for _, fs in ipairs(notes) do fs:SetWidth(textWidth) end
-    end)
-    local f = panel
+    end
 
+    -- The width to BUILD at. The real one arrives from LIB.OnOptionsResize once the page is
+    -- registered and shown, which is before the player sees it; this only has to be close enough
+    -- that nothing is laid out at a silly size in between.
+    local buildWidth = (LIB.OptionsWidth and LIB.OptionsWidth(panel)) or FALLBACK_WIDTH
+    panel:SetWidth(buildWidth)
+    if not LIB.OnOptionsResize then
+        -- An older library: keep watching the frame ourselves, exactly as before.
+        panel:SetScript("OnSizeChanged", function(_, width) Relayout(width) end)
+    end
+
+    -- Everything below chains off `anchor`, so a row can be moved or removed without re-pointing
+    -- its neighbours. `band` alternates the row backgrounds.
+    local anchor, band
+
+    local function Note(text)
+        local fs = f:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        fs:SetWidth(math.max(120, buildWidth - LEFT - INDENT - LEFT))
+        notes[#notes + 1] = fs
+        fs:SetJustifyH("LEFT")
+        fs:SetSpacing(2)
+        fs:SetText(text)
+        return fs
+    end
+
+    --- A paragraph in the flow, for the three choices that need one. Indented under its heading.
+    local function Para(text, gap)
+        local fs = Note(text)
+        fs:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, gap or -8)
+        anchor = fs
+        return fs
+    end
+
+    local function Section(text)
+        local fs = f:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+        fs:SetText(text)
+        fs:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -18)
+        local line = f:CreateTexture(nil, "ARTWORK")
+        line:SetAtlas("Options_HorizontalDivider")
+        line:SetHeight(1)
+        line:SetPoint("LEFT", fs, "RIGHT", 8, 0)
+        line:SetPoint("RIGHT", f, "RIGHT", -LEFT, 0)
+        anchor, band = fs, false
+        return fs
+    end
+
+    --- One row: label left, control at CONTROL_X, tooltip on hover. `indent` shifts the label only,
+    --- for the radio groups, so their controls still line up with everything else.
+    local function Row(text, tip, indent)
+        local r = CreateFrame("Frame", nil, f)
+        r:SetHeight(ROW_H)
+        r:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
+        r:SetPoint("RIGHT", f, "RIGHT", -LEFT, 0)
+        band = not band
+        if band then
+            local bg = r:CreateTexture(nil, "BACKGROUND")
+            bg:SetAllPoints()
+            bg:SetColorTexture(1, 1, 1, 0.035)
+        end
+        local label = r:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        label:SetPoint("LEFT", r, "LEFT", (indent or 0), 0)
+        label:SetText(text)
+        label:SetJustifyH("LEFT")
+        -- No width is set on purpose: a width plus SetWordWrap(false) ellipsises, and a setting whose
+        -- name is cut off is worse than one that runs a little wide. The labels are written short
+        -- enough to stop before CONTROL_X.
+        if tip then
+            r:EnableMouse(true)
+            r:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetText(text, 1, 1, 1)
+                GameTooltip:AddLine(tip, 0.8, 0.8, 0.8, true)
+                GameTooltip:Show()
+            end)
+            r:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        end
+        r.label = label
+        anchor = r
+        return r
+    end
+
+    --- The row's own control sits at CONTROL_X, vertically centred, whatever kind it is.
+    local function Place(control, row, yOffset)
+        control:SetPoint("LEFT", row, "LEFT", CONTROL_X, yOffset or 0)
+        row.control = control
+        return control
+    end
+
+    local function Toggle(text, tip, onClick)
+        local row = Row(text, tip)
+        local cb = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
+        cb:SetSize(24, 24)
+        Place(cb, row)
+        cb:SetScript("OnClick", function(self) onClick(self:GetChecked() and true or false) end)
+        row.check = cb
+        return row
+    end
+
+    --- A slider with its number beside it. Built by hand because OptionsSliderTemplate is deprecated
+    --- on this client - the same reason Guildhall's settings build theirs the same way.
+    local function Slider(text, tip, lo, hi, get, set, describe)
+        local row = Row(text, tip)
+        local s = CreateFrame("Slider", nil, row, "BackdropTemplate")
+        s:SetSize(140, 16)
+        Place(s, row)
+        s:SetOrientation("HORIZONTAL")
+        s:SetBackdrop({ bgFile = "Interface\\Buttons\\UI-SliderBar-Background",
+            edgeFile = "Interface\\Buttons\\UI-SliderBar-Border", tile = true, tileSize = 8, edgeSize = 8,
+            insets = { left = 3, right = 3, top = 6, bottom = 6 } })
+        s:SetThumbTexture("Interface\\Buttons\\UI-SliderBar-Button-Horizontal")
+        s:SetMinMaxValues(lo, hi)
+        s:SetValueStep(1)
+        s:SetObeyStepOnDrag(true)
+        local value = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        value:SetPoint("LEFT", s, "RIGHT", 10, 0)
+        local function SyncText(v) value:SetText(describe and describe(v) or tostring(v)) end
+        s:SetScript("OnValueChanged", function(_, v, byUser)
+            v = math.floor(v + 0.5)
+            SyncText(v)
+            -- Only a drag or a click writes a setting. SetValue from Refresh must not save anything,
+            -- or merely opening the page would count as the player changing their mind.
+            if byUser then set(v) end
+        end)
+        row.Sync = function()
+            local v = get()
+            s:SetValue(v)
+            SyncText(v)
+        end
+        row.slider = s
+        return row
+    end
+
+    --- One button that steps through a short list of choices. A real dropdown would mean picking
+    --- between the client's deprecated menu API and its new one; with four choices, a button that
+    --- says what it is set to costs the player nothing and us no client-version risk.
+    local function Cycle(text, tip, choices, get, set)
+        local row = Row(text, tip)
+        local b = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+        b:SetSize(140, 22)
+        Place(b, row)
+        row.Sync = function()
+            local current = get()
+            for _, choice in ipairs(choices) do
+                if choice.value == current then b:SetText(choice.label) return end
+            end
+            b:SetText(choices[1].label)
+        end
+        b:SetScript("OnClick", function()
+            local current, index = get(), 1
+            for i, choice in ipairs(choices) do
+                if choice.value == current then index = i break end
+            end
+            set(choices[(index % #choices) + 1].value)
+            row.Sync()
+        end)
+        row.button = b
+        return row
+    end
+
+    --- A radio group, one row each. The label carries the choice, so these rows have the radio on
+    --- the LEFT of their text, not out at CONTROL_X: a list of alternatives reads as a list.
+    local function Radios(choices, get, set)
+        local buttons = {}
+        for index, choice in ipairs(choices) do
+            local row = Row("", nil, INDENT + 22)
+            local cb = CreateFrame("CheckButton", nil, row, "UIRadioButtonTemplate")
+            cb:SetPoint("LEFT", row, "LEFT", INDENT, 0)
+            row.label:SetText(choice.note
+                and (choice.label .. " |cff808080(" .. choice.note .. ")|r") or choice.label)
+            cb:SetScript("OnClick", function()
+                set(choice.value)
+                BW.Refresh()
+                if panel.OnRefresh then panel.OnRefresh() end
+            end)
+            buttons[index] = cb
+        end
+        return buttons
+    end
+
+    -- ---------------------------------------------------------------- the page
     local head = f:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     head:SetPoint("TOPLEFT", LEFT, -6)
     head:SetText("BagWarden")
     local version = f:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
     version:SetPoint("BOTTOMLEFT", head, "BOTTOMRIGHT", 8, 1)
     version:SetText("v" .. BW.version)
-    local sub = Note(f, "Free one bag slot per click. BagWarden picks the least valuable junk stack, tells you "
+    anchor = head
+    Para("Free one bag slot per click. BagWarden picks the least valuable junk stack, tells you "
         .. "what it will do before you click, and never touches quest items or anything better than green.")
-    sub:SetPoint("TOPLEFT", head, "BOTTOMLEFT", 0, -8)
 
-    local function Check(anchor, x, y, text, onClick)
-        local cb = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
-        cb:SetSize(26, 26)
-        cb:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", x, y)
-        local label = f:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-        label:SetPoint("LEFT", cb, "RIGHT", 4, 0)
-        label:SetText(text)
-        cb:SetScript("OnClick", function(self) onClick(self:GetChecked() and true or false) end)
-        return cb
+    -- Whether BagWarden has an icon at all. This used to live on the shared YippYapp page, next to
+    -- a "group the buttons" toggle; grouping is fixed on now, so the only question left is this one,
+    -- and it belongs to the addon it is about. Near the top because someone hunting for it is
+    -- looking for a way to hide an icon, not reading the page through.
+    local minimapRow
+    if LIB.SetMinimapButtonShown and LIB.IsMinimapButtonShown then
+        Section("BagWarden's icon")
+        minimapRow = Toggle("Show BagWarden in the minimap row",
+            "The YippYapp addons share one minimap button that opens a small row of icons. This is "
+            .. "whether BagWarden is one of them. The addon works exactly the same either way - its "
+            .. "icon only opens these settings - and you can always get here with /bagw.",
+            function(on) LIB.SetMinimapButtonShown("BagWarden", on) end)
     end
 
-    local h1 = Heading(f, "At a merchant")
-    h1:SetPoint("TOPLEFT", sub, "BOTTOMLEFT", 0, -20)
-    local sell = Check(h1, 0, -6, "Sell all grey items automatically", function(on) BW.db.sellGreys = on end)
-    local sellNote = Note(f, "When you open a vendor, BagWarden sells your grey items and says what they came to. "
-        .. "Items on your never-delete list are never sold.")
-    sellNote:SetPoint("TOPLEFT", sell, "BOTTOMLEFT", INDENT, -2)
-
-    local h2 = Heading(f, "The bag button")
-    h2:SetPoint("TOPLEFT", sellNote, "BOTTOMLEFT", -INDENT, -20)
-    local search = Check(h2, 0, -6, "Make the bag search box smaller", function(on)
-        BW.db.smallSearch = on
+    Section("At a merchant")
+    local sell = Toggle("Sell all grey items automatically",
+        "When you open a vendor, BagWarden sells your grey items and says what they came to. Items on "
+        .. "your never-delete list are never sold.",
+        function(on) BW.db.sellGreys = on end)
+    Para("Alt-click any grey or white stack in your bags to call it scrap: the next merchant you open "
+        .. "buys it, and you never have to decide about that item again. Alt-click it a second time to "
+        .. "take it off the list. Up to twelve stacks go per visit, greys and scrap together, so "
+        .. "everything stays in the merchant's buyback list until you walk away.", -12)
+    local scrapList = Para("", -10)
+    local clearScrap = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    clearScrap:SetSize(160, 22)
+    clearScrap:SetText("Empty the scrap list")
+    clearScrap:SetPoint("TOPLEFT", scrapList, "BOTTOMLEFT", 0, -8)
+    clearScrap:SetScript("OnClick", function()
+        wipe(BW.db.scrap or {})
         BW.Refresh()
+        if panel.OnRefresh then panel.OnRefresh() end
     end)
-    local searchNote = Note(f, "In the combined bag window Blizzard's search box takes up most of the top "
-        .. "row. Tick this to shrink it and move it to the right, next to the sort button, which leaves the "
-        .. "title its space. The separate bags aren't crowded, so nothing changes there.")
-    searchNote:SetPoint("TOPLEFT", search, "BOTTOMLEFT", INDENT, -2)
+    anchor = clearScrap
+
+    Section("The bag button")
+    local search = Toggle("Make the bag search box smaller",
+        "In the combined bag window Blizzard's search box takes up most of the top row. This shrinks it "
+        .. "and moves it to the right, next to the sort button, which leaves the title its space. The "
+        .. "separate bags aren't crowded, so nothing changes there.",
+        function(on) BW.db.smallSearch = on BW.Refresh() end)
+
+    -- The on-screen row. Everything here is layout except the first toggle, which is also the only
+    -- setting on this page that costs anything: with the row on, the bags are rescanned on every bag
+    -- update instead of only while a bag window is open (see BW.Refresh).
+    Section("The on-screen row")
+    local barOn = Toggle("Show a row of icons on screen",
+        "Turning this on is the only setting here that costs anything: BagWarden then rescans your bags "
+        .. "as they change even while they are shut, because something on screen now depends on it.",
+        function(on)
+            BW.db.barEnabled = on
+            BW.ApplyBarSettings()
+            if panel.OnRefresh then panel.OnRefresh() end
+        end)
+    Para("The next few stacks BagWarden would delete, cheapest first, without opening your bags. A plain "
+        .. "click does nothing on purpose - Ctrl-click an icon to act on it, and right-click one to put "
+        .. "that item on your never-delete list. Anything that would ask before it goes has an amber edge, "
+        .. "and still asks however you click it. Drag the row to move it.", -6)
+
+    local barCount = Slider("How many icons", "How many stacks the row shows at once.", 1, 10,
+        function() return BW.db.barCount or 4 end,
+        function(v) BW.db.barCount = v BW.ApplyBarSettings() end)
+    local barSize = Slider("Icon size", "How big each icon is, in pixels.", 16, 64,
+        function() return BW.db.barSize or 36 end,
+        function(v) BW.db.barSize = v BW.ApplyBarSettings() end,
+        function(v) return v .. " px" end)
+    local barFree = Slider("Only when free slots are down to",
+        "Keeps the row out of sight until you are actually running out of room. Four by default, so it "
+        .. "appears when you have four slots left and stays out of your way until then. At zero it is "
+        .. "always shown.",
+        0, 20,
+        function() return BW.db.barFreeSlots or 0 end,
+        function(v) BW.db.barFreeSlots = v BW.ApplyBarSettings() end,
+        function(v) return v == 0 and "always show" or (v .. " or fewer") end)
+    local barDir = Cycle("The row grows",
+        "Which way the row extends from its first icon. The first icon never moves, whichever you pick.", {
+        { value = "RIGHT", label = "Right" }, { value = "DOWN", label = "Down" },
+        { value = "LEFT", label = "Left" }, { value = "UP", label = "Up" },
+    }, function() return BW.db.barDirection or "RIGHT" end,
+       function(v) BW.db.barDirection = v BW.ApplyBarSettings() end)
+    local barCombat = Toggle("Hide it in combat",
+        "Deleting is refused in combat anyway, so the icons can only be clutter over your action bars.",
+        function(on) BW.db.barHideInCombat = on BW.ApplyBarSettings() end)
+    local barLock = Toggle("Lock it where it is",
+        "Stops the row being dragged once it is where you want it.",
+        function(on) BW.db.barLocked = on end)
+    local barFreeLine = Toggle("Show how many slots are free",
+        "A line above the row: grey normally, amber when you are running low, red when the bags are "
+        .. "full. \"Running low\" means the threshold above, or five slots when that is set to always "
+        .. "show. It also keeps the row on screen when your bags are full and there is nothing "
+        .. "BagWarden can free - which is exactly when you want telling.",
+        function(on) BW.db.barShowFree = on BW.ApplyBarSettings() end)
+    local barPrice = Toggle("Show the price under each icon",
+        "What that stack fetches at a vendor, under the icon as well as in its tooltip.",
+        function(on) BW.db.barShowPrice = on BW.ApplyBarSettings() end)
 
     -- How chatty the confirm popup is. Green and better can never be deleted, so the choice only
     -- covers grey and white.
-    local hAsk = Heading(f, "Asking first")
-    hAsk:SetPoint("TOPLEFT", searchNote, "BOTTOMLEFT", -INDENT, -20)
-    local askNote = Note(f, "BagWarden always asks before deleting a crafting reagent, anything you use "
-        .. "(food, drink, potions, bandages) and anything a quest has ever wanted. On top of that you can "
-        .. "have it ask by quality.")
-    askNote:SetPoint("TOPLEFT", hAsk, "BOTTOMLEFT", 0, -8)
-
-    local askChoices, askButtons = {
+    Section("Asking first")
+    Para("BagWarden always asks before deleting a crafting reagent, anything you use (food, drink, "
+        .. "potions, bandages) and anything a quest has ever wanted. On top of that you can have it ask "
+        .. "by quality.")
+    local askChoices = {
         { value = 2, label = "Only reagents and things you use", note = "the least clicking" },
         { value = 1, label = "Also ask about white items" },
         { value = 0, label = "Ask about everything, grey items too" },
-    }, {}
-    local anchor = askNote
-    for index, choice in ipairs(askChoices) do
-        local cb = CreateFrame("CheckButton", nil, f, "UIRadioButtonTemplate")
-        cb:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, index == 1 and -6 or -2)
-        local label = f:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-        label:SetPoint("LEFT", cb, "RIGHT", 4, 0)
-        label:SetText(choice.note and (choice.label .. " |cff808080(" .. choice.note .. ")|r") or choice.label)
-        cb:SetScript("OnClick", function()
-            BW.db.askFrom = choice.value
+    }
+    local askButtons = Radios(askChoices, function() return BW.db.askFrom or 2 end,
+        function(v) BW.db.askFrom = v end)
+    local green = Toggle("Let it delete green items too",
+        "Off by default. Green items are normally kept whatever else you choose. Turn this on and vendor "
+        .. "greens can go as well - they always ask first, however the choices above are set. Blue and "
+        .. "better are never deleted.",
+        function(on)
+            BW.db.allowGreen = on
             BW.Refresh()
             if panel.OnRefresh then panel.OnRefresh() end
         end)
-        askButtons[index] = cb
-        anchor = cb
-    end
 
-    local green = Check(anchor, 0, -8, "Let it delete green items too", function(on)
-        BW.db.allowGreen = on
-        BW.Refresh()
-        if panel.OnRefresh then panel.OnRefresh() end
-    end)
-    local greenNote = Note(f, "Off by default. Green items are normally kept whatever else you choose. "
-        .. "Tick this and vendor greens can go as well - they always ask first, however you set the "
-        .. "choices above. Blue and better are never deleted.")
-    greenNote:SetPoint("TOPLEFT", green, "BOTTOMLEFT", INDENT, -2)
-    anchor = greenNote
-
-    -- Everything BagWarden is keeping right now, grouped by why. This is what used to crowd the
-    -- button's tooltip.
-    local h3 = Heading(f, "Protected items")
-    h3:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", -INDENT, -20)
-    local protectedNote = Note(f, "What's in your bags right now that BagWarden will not delete. Quest items, "
-        .. "items you can't sell and anything better than green are always kept, with no setting needed.")
-    protectedNote:SetPoint("TOPLEFT", h3, "BOTTOMLEFT", 0, -8)
-    local profession = Check(protectedNote, 0, -8, "Keep profession gear", function(on)
-        BW.db.protectProfession = on
-        wipe(BW.professionCache)
-        BW.Refresh()
-        if panel.OnRefresh then panel.OnRefresh() end
-    end)
-    local professionNote = Note(f, "On by default. Keeps mining picks, skinning knives, fishing poles, "
-        .. "enchanting rods and the like, anything that gives profession skill (+5 Mining gloves), anything "
-        .. "that needs a profession, and every recipe, pattern and plan.")
-    professionNote:SetPoint("TOPLEFT", profession, "BOTTOMLEFT", INDENT, -2)
-
-    local reagentNote = Note(f, "Ore, stone, cloth, leather and herbs - anything the game marks "
-        .. "\"Crafting Reagent\". Reagents that aren't kept still ask before they go, like anything else "
-        .. "you might want.")
-    -- The intro to the three choices below, so it sits at their own indent with a clear gap above:
-    -- at the description indent it read as a second paragraph about profession gear instead.
-    reagentNote:SetPoint("TOPLEFT", professionNote, "BOTTOMLEFT", -INDENT, -16)
-
-    local reagentChoices, reagentButtons = {
+    -- Everything BagWarden is keeping right now, grouped by why.
+    Section("Protected items")
+    Para("What's in your bags right now that BagWarden will not delete. Quest items, items you can't sell "
+        .. "and anything better than green are always kept, with no setting needed.")
+    local profession = Toggle("Keep profession gear",
+        "On by default. Keeps mining picks, skinning knives, fishing poles, enchanting rods and the like, "
+        .. "anything that gives profession skill (+5 Mining gloves), anything that needs a profession, and "
+        .. "every recipe, pattern and plan.",
+        function(on)
+            BW.db.protectProfession = on
+            wipe(BW.professionCache)
+            BW.Refresh()
+            if panel.OnRefresh then panel.OnRefresh() end
+        end)
+    Para("Ore, stone, cloth, leather and herbs - anything the game marks \"Crafting Reagent\". Reagents "
+        .. "that aren't kept still ask before they go, like anything else you might want.", -12)
+    local reagentChoices = {
         { value = "mine", label = "Keep reagents my professions use" },
         { value = "all", label = "Keep every crafting reagent" },
         { value = "none", label = "Keep none" },
-    }, {}
-    local reagentAnchor = reagentNote
-    for index, choice in ipairs(reagentChoices) do
-        local cb = CreateFrame("CheckButton", nil, f, "UIRadioButtonTemplate")
-        cb:SetPoint("TOPLEFT", reagentAnchor, "BOTTOMLEFT", 0, index == 1 and -6 or -2)
-        local label = f:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-        label:SetPoint("LEFT", cb, "RIGHT", 4, 0)
-        label:SetText(choice.label)
-        cb:SetScript("OnClick", function()
-            BW.db.reagentKeep = choice.value
-            BW.Refresh()
-            if panel.OnRefresh then panel.OnRefresh() end
-        end)
-        reagentButtons[index] = cb
-        reagentAnchor = cb
-    end
-
+    }
+    local reagentButtons = Radios(reagentChoices, function() return BW.db.reagentKeep or "mine" end,
+        function(v) BW.db.reagentKeep = v end)
     -- Said plainly, because the honest answer depends on another addon being there.
-    local reagentMineNote = Note(f, "")
-    reagentMineNote:SetPoint("TOPLEFT", reagentAnchor, "BOTTOMLEFT", INDENT, -4)
+    local reagentMineNote = Para("", -6)
 
-    local protectedList = Note(f, "")
-    protectedList:SetPoint("TOPLEFT", reagentMineNote, "BOTTOMLEFT", -INDENT, -12)
+    local protectedList = Para("", -12)
+    local ignoreTitle = Para("", -12)
 
     -- Your own never-delete list: one row per item, each removable.
-    local ignoreTitle = Note(f, "")
-    ignoreTitle:SetPoint("TOPLEFT", protectedList, "BOTTOMLEFT", 0, -12)
     local rows, rowPool = {}, CreateFrame("Frame", nil, f)
     rowPool:SetSize(1, 1)
     rowPool:SetPoint("TOPLEFT", ignoreTitle, "BOTTOMLEFT", 0, -4)
 
-    local function Row(index)
+    local function IgnoreRow(index)
         local row = rows[index]
         if row then return row end
         row = CreateFrame("Frame", nil, f)
@@ -212,10 +456,18 @@ function BW.RegisterOptions()
     end)
 
     -- The audit log: what BagWarden has actually deleted.
-    local h4 = Heading(f, "Deleted items")
-    local logNote = Note(f, "Everything BagWarden has deleted on this account, newest first. The last "
+    local h4 = f:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    h4:SetText("Deleted items")
+    -- Section() would anchor this into the chain, and Refresh has to move it below however many
+    -- never-delete rows there are. So it gets the divider by hand; the line follows the heading.
+    local h4Line = f:CreateTexture(nil, "ARTWORK")
+    h4Line:SetAtlas("Options_HorizontalDivider")
+    h4Line:SetHeight(1)
+    h4Line:SetPoint("LEFT", h4, "RIGHT", 8, 0)
+    h4Line:SetPoint("RIGHT", f, "RIGHT", -LEFT, 0)
+    local logNote = Note("Everything BagWarden has deleted on this account, newest first. The last "
         .. BW.LOG_MAX .. " are kept.")
-    local logList = Note(f, "")
+    local logList = Note("")
     local clearLog = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     clearLog:SetSize(160, 22)
     clearLog:SetText("Clear log")
@@ -224,7 +476,9 @@ function BW.RegisterOptions()
         if panel.OnRefresh then panel.OnRefresh() end
     end)
 
-    local launcher = LIB.LauncherOptions and LIB.LauncherOptions(f, "BagWarden")
+    -- The launcher bar is gone, and LIB.LauncherOptions with it. What it used to offer that still
+    -- means something is "should this addon have an icon at all", which is now the minimap toggle
+    -- near the top of this page.
 
     --- Group everything in the bags that is kept, by reason.
     local function ProtectedText()
@@ -267,11 +521,69 @@ function BW.RegisterOptions()
         return table.concat(lines, "\n")
     end
 
+    --- The scrap list, said as a sentence rather than a table: it is usually a handful of items, and
+    --- the only thing you do to one is Alt-click it again in your bags.
+    local function ScrapText()
+        local ids = {}
+        for itemID in pairs(BW.db.scrap or {}) do ids[#ids + 1] = itemID end
+        if #ids == 0 then
+            return "Nothing on the scrap list yet."
+        end
+        local names = {}
+        for _, itemID in ipairs(ids) do
+            names[#names + 1] = C_Item.GetItemNameByID(itemID) or ("item " .. itemID)
+        end
+        table.sort(names)
+        return "|cffffd100Scrap:|r " .. table.concat(names, ", ")
+    end
+
     local function Refresh()
         if not BW.db then return end
-        sell:SetChecked(BW.db.sellGreys)
-        search:SetChecked(BW.db.smallSearch)
-        profession:SetChecked(BW.db.protectProfession)
+        -- The minimap button's state is the library's, not ours, so it is read rather than stored.
+        if minimapRow then
+            minimapRow.check:SetChecked(LIB.IsMinimapButtonShown("BagWarden") ~= false)
+        end
+        scrapList:SetText(ScrapText())
+        clearScrap:SetShown(next(BW.db.scrap or {}) ~= nil)
+        sell.check:SetChecked(BW.db.sellGreys)
+        search.check:SetChecked(BW.db.smallSearch)
+        barOn.check:SetChecked(BW.db.barEnabled)
+        barCombat.check:SetChecked(BW.db.barHideInCombat)
+        barLock.check:SetChecked(BW.db.barLocked)
+        barPrice.check:SetChecked(BW.db.barShowPrice)
+        -- Defaults to on, so read a missing value as on rather than as off.
+        barFreeLine.check:SetChecked(BW.db.barShowFree ~= false)
+        barCount.Sync()
+        barSize.Sync()
+        barFree.Sync()
+        barDir.Sync()
+        -- The row's own controls mean nothing while the row is off, and a page full of live-looking
+        -- sliders that change nothing is worse than a page that says so.
+        --
+        -- Greying them out is a nicety; this function running is not. Refresh builds the page and
+        -- runs again on every OnShow, so one missing method here takes the ENTIRE settings page
+        -- down - every section, not just this one - and BagWarden then looks like it never loaded.
+        -- SetEnabled is the modern spelling, and every other use of it in the family is on a Button;
+        -- on a Slider it is unverified on this client. So ask for it, fall back to the older
+        -- Enable/Disable pair, and let a widget that has neither simply stay lit.
+        local rowOn = BW.db.barEnabled and true or false
+        local function SetLit(control, on)
+            if not control then return end
+            if type(control.SetEnabled) == "function" then
+                control:SetEnabled(on)
+            elseif on and type(control.Enable) == "function" then
+                control:Enable()
+            elseif not on and type(control.Disable) == "function" then
+                control:Disable()
+            end
+        end
+        for _, row in ipairs({ barCount, barSize, barFree, barDir, barCombat, barLock,
+                               barFreeLine, barPrice }) do
+            SetLit(row.control, rowOn)
+            row.label:SetFontObject(rowOn and "GameFontHighlight" or "GameFontDisable")
+        end
+
+        profession.check:SetChecked(BW.db.protectProfession)
         for index, choice in ipairs(reagentChoices) do
             reagentButtons[index]:SetChecked((BW.db.reagentKeep or "mine") == choice.value)
         end
@@ -283,7 +595,7 @@ function BW.RegisterOptions()
         for index, choice in ipairs(askChoices) do
             askButtons[index]:SetChecked((BW.db.askFrom or 2) == choice.value)
         end
-        green:SetChecked(BW.db.allowGreen)
+        green.check:SetChecked(BW.db.allowGreen)
         protectedList:SetText(ProtectedText())
 
         -- The never-delete rows.
@@ -296,7 +608,7 @@ function BW.RegisterOptions()
             "Your never-delete list is empty. Right-click the bag button to add what it was about to delete.")
         for _, row in ipairs(rows) do row:Hide() end
         for index, itemID in ipairs(ids) do
-            local row = Row(index)
+            local row = IgnoreRow(index)
             row.label:SetText(C_Item.GetItemNameByID(itemID) or ("item " .. itemID))
             row.remove:SetScript("OnClick", function()
                 BW.SetIgnored(itemID, false)
@@ -320,9 +632,20 @@ function BW.RegisterOptions()
         clearLog:ClearAllPoints()
         clearLog:SetPoint("TOPLEFT", logList, "BOTTOMLEFT", 0, -10)
         clearLog:SetShown(#(BW.db.log or {}) > 0)
-        if launcher then
-            launcher:ClearAllPoints()
-            launcher:SetPoint("TOPLEFT", clearLog, "BOTTOMLEFT", 0, -24)
+
+        -- The help text goes below everything, and AddHelp wants a y in the page's own coordinates
+        -- rather than an anchor - so it is placed from here, where the frames above have just been
+        -- laid out and the never-delete list and the log have their real heights. Calling it again
+        -- replaces the text rather than stacking a second copy, which is what makes that safe.
+        if LIB.AddHelp then
+            local top, bottom = f:GetTop(), clearLog:GetBottom()
+            if top and bottom then
+                LIB.AddHelp(f, HELP, -(top - bottom) - 28)
+                -- The page is a scroll child, so its height is what decides whether the help can be
+                -- scrolled to at all. Grow to fit it; never shrink below the height we registered.
+                local reach = -(LIB.HelpBottom and LIB.HelpBottom(f) or 0) + 24
+                if reach > f:GetHeight() then f:SetHeight(reach) end
+            end
         end
     end
     panel.OnRefresh = Refresh
@@ -331,12 +654,17 @@ function BW.RegisterOptions()
 
     if LIB.RegisterOptionsPage then
         -- Tall enough for the protected list and the log; the lib scrolls whatever doesn't fit.
-        category = LIB.RegisterOptionsPage("BagWarden", panel, "BagWarden", 900)
+        category = LIB.RegisterOptionsPage("BagWarden", panel, "BagWarden", 1220)
     else
         category = Settings.RegisterCanvasLayoutCategory(panel, "BagWarden")
         Settings.RegisterAddOnCategory(category)
     end
     BW.category = category
+
+    -- AFTER registering, not before: declaring a height is what makes the page scroll, and a
+    -- scrolling page is narrower than the frame by the width of the scrollbar. Ask any earlier and
+    -- the library can only answer for a page it has not been told about yet.
+    if LIB.OnOptionsResize then LIB.OnOptionsResize(panel, Relayout) end
 end
 
 --- Returns true when the settings opened; says why in chat when they can't.

@@ -1,5 +1,95 @@
 # BagWarden
 
+## Unreleased
+
+- Fixed BagWarden possibly selling nothing at all at a merchant. It asked whether Blizzard's merchant
+  window was on screen before selling, but that window is put up by the game in the same moment the
+  merchant opens, and may not be up yet when BagWarden is told about it. The game telling us a
+  merchant is open is the stronger fact, so that is what it goes on now.
+- New: `/bagw sell` says what a merchant visit would do and, for anything it would hold back, exactly
+  why - the protection that stopped it, a price of nothing, the twelve-per-visit limit. It sells
+  nothing and works away from a merchant, which is the point: "it didn't sell my scrap" is always
+  reported after the fact, and this answers it without a guess.
+
+- **BagWarden now explains itself in the game.** At the bottom of its settings page there are four
+  headed sections: what it does, how to get started, things worth knowing, and what it does with the
+  other YippYapp addons. The switches stay at the top, because that is what you open settings for;
+  the help is what you scroll to. This is new rather than moved - the old welcome window gave
+  BagWarden a title and one line, and nowhere in the game said how the addon is actually used.
+- The welcome window is gone, and BagWarden no longer registers a page in it.
+
+- **"Show BagWarden in the minimap row" is now on BagWarden's own settings page**, near the top. The
+  YippYapp addons share one minimap button, and whether BagWarden is one of the icons behind it was a
+  setting on a shared page that is going away. The addon works the same either way - its icon only
+  opens these settings - and `/bagw` always gets you here.
+- The launcher bar is gone, so BagWarden no longer puts an icon on it. Your minimap choice is
+  untouched: a hidden bar icon was never a statement about your minimap, and the two were never
+  stored in the same place.
+- Fixed the settings page assuming how wide it is. It now asks the window, which matters because a
+  page this long scrolls, and a scrolling page is narrower than the frame by the width of the
+  scrollbar. The same wrong assumption had pushed buttons off the right-hand edge of the shared page.
+
+- **Alt-click a stack in your bags to call it scrap.** The next merchant you open buys it, and you
+  never have to decide about that item again - no setting to find, no list to curate. Alt-click it a
+  second time to take it back off. The scrap list is account-wide and shows on the settings page
+  under "At a merchant".
+- **A gold coin sits in the corner of every scrapped stack**, so the list is something you can see in
+  your bags rather than something you have to remember. It appears on the click that put it there and
+  follows the item through a bag sort.
+- Every grey and white item's tooltip now mentions the Alt-click, and anything already on the list
+  says so wherever you see it - in your bags, at a merchant, on a link in chat. A gesture nothing
+  ever mentions is a gesture nobody finds.
+- Greys and scrap share the same twelve-per-visit limit, so everything you sell stays in the
+  merchant's buyback list until you walk away.
+- Scrap only takes grey and white items. Buyback makes a mistake recoverable, but only until you
+  leave, and an Alt-click that lands on the wrong slot should not be able to turn a blue into gold
+  you can't undo - so better than white is refused out loud instead of sold quietly.
+- A scrapped item is sold even when BagWarden would otherwise have kept it for being a reagent, or
+  food, or something a quest once wanted: you named that exact item, which beats our guess. What no
+  list overrides is a hard keep - a quest item in your log, something unsellable, something too good.
+  Those are not guesses.
+
+- **The settings page reads as a list instead of an essay.** Every setting is now one row - its name
+  on the left, its control at the same place on the right, every other row faintly shaded so you can
+  run your eye down it. What a setting does moved into the row's tooltip, so four paragraphs that used
+  to sit under four toggles are there when you want them and out of the way when you don't. The three
+  choices that genuinely need explaining - which reagents to keep, how much to ask, and the row below -
+  keep their text on the page, because a bare label there would be a guess.
+
+- **A row of icons on the screen, showing what goes next.** On by default, and silent until you are
+  down to four free slots - so it is out of your way until the moment it is useful, and you don't
+  have to know it exists to be helped by it. BagWarden draws the next few stacks it would delete,
+  cheapest first, without you opening your bags.
+  Ctrl-click an icon to act on that one - not just the first - and right-click one to put that item
+  on your never-delete list. A plain click does nothing at all, on purpose: the bag button deletes on
+  a plain click because you had to open your bags to reach it, and a row sitting on the world is far
+  easier to hit by accident.
+- **Ctrl-clicking an icon gets on with it.** Picking one icon out of the row and holding Ctrl is a
+  long way from a slip, and the tooltip under your cursor has already named the item - so a reagent
+  or an old quest leftover goes without a second question. Two things still stop and ask, however you
+  click and wherever you click them: anything green, and anything another YippYapp addon unlocked for
+  us. Both were promises made elsewhere, and a held key is not a reason to break one.
+- Fixed: holding Ctrl on the bag button deleted green items without asking, although the setting that
+  allows greens at all says they always ask "however the other settings are set". Both the button and
+  the row now ask the same single rule about what Ctrl may skip, so they cannot drift apart again.
+- Each icon's edge now says which of the three it is: grey for plain junk, amber for something that
+  isn't junk but will go on a Ctrl-click, blue for the ones that will stop and ask you first.
+- **The row says how much room you have left**, above the icons: grey normally, amber when you are
+  running low, and red saying "Bags full" when you are out. Running low means whatever you set under
+  "only when free slots are under", or five slots if you never set one - your own threshold is
+  already you telling us what low means to you.
+- And when your bags are full with nothing BagWarden can free, the row stays on screen to say exactly
+  that, instead of hiding because it has no icons to show. That is the moment you most want telling,
+  and going quiet then would look like the addon had given up without a word.
+- The row is yours to place: drag it anywhere, choose how many icons (1-10), how big they are, which
+  way it grows, and whether it hides in combat. It can also stay out of sight until you are actually
+  running out of room - set "only when free slots are under" and it appears when you need it.
+- A hidden row costs almost nothing. While it is waiting for your bags to fill, BagWarden only reads
+  how many slots are free - five numbers - instead of reading every slot. The full scan happens once
+  the row actually has something to show, which is also when you were about to open your bags anyway.
+  With "hide it in combat" on it reads nothing at all during a fight, which is when loot arrives
+  fastest. Set the row to "always show" and you are opting into the full scan on every bag update.
+
 ## 0.1.0-beta4
 
 - On the settings page, the paragraph explaining the three reagent choices now sits with them

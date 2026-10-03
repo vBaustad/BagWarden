@@ -35,6 +35,9 @@ Synergy.lua
 Value.lua
 Delete.lua
 Vendor.lua
+Scrap.lua
 Highlight.lua
 Button.lua
+Bar.lua
 Options.lua
+Test.lua
