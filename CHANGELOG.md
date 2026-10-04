@@ -1,6 +1,6 @@
 # BagWarden
 
-## Unreleased
+## 0.1.0-beta5
 
 - Fixed BagWarden possibly selling nothing at all at a merchant. It asked whether Blizzard's merchant
   window was on screen before selling, but that window is put up by the game in the same moment the
