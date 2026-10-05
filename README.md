@@ -20,10 +20,10 @@ does it.
 - Items some quest has asked for before on this account: BagWarden remembers them as you play and
   always asks before one of those goes.
 
-Everything ordinary is ranked by what the slot is really worth, whether the item is grey or
-white - freeing a slot should cost you as little as possible, and a grey item is not
-automatically the cheapest thing you carry. Crafting reagents, trade goods, and anything another
-YippYapp addon has an opinion about are ordered separately; "How it picks" below says how.
+Everything is ranked by what the slot is really worth, whether the item is grey or white - freeing a
+slot should cost you as little as possible, and a grey item is not automatically the cheapest thing
+you carry. The one thing held back is your buff food, when another YippYapp addon has told BagWarden
+which food that is.
 
 Before it deletes a crafting reagent, food, drink, a potion, a bandage or anything a quest has ever
 asked you for, it asks, in a popup that can also put the item on the never-delete list. A setting
@@ -35,9 +35,10 @@ skips the asking, never a protection.
 
 BagWarden deletes only inside your own click on its button, or your own press of its keybind (set it
 under BagWarden in the keybindings). Never on a timer, never several items at once, never in combat,
-and never from the minimap button or a chat command - `/bagw free` will tell you to use the button
-instead. That is partly because the game only allows an addon to delete from a real click, and
-partly because it is the right way round: one deliberate click, one item.
+and never from a chat command - `/bagw free` will tell you to use the button instead, because the
+game only allows an addon to delete from a real click. Nor from the minimap button, which could
+work but is a choice rather than a limit: deleting should be one deliberate click, in the window
+where you can see what is about to go.
 
 Before anything goes, BagWarden reads the slot again and checks that it still holds the same item,
 the same number of them, and that every protection still passes. If anything changed while you were
@@ -45,18 +46,37 @@ deciding, it deletes nothing and tells you why.
 
 ## The scrap list
 
-**Alt-click** any grey or white stack in your bags and it becomes scrap: a gold coin appears in the
-corner of the slot, the next merchant you open buys it, and you never have to decide about that item
-again. Alt-click it again to take it off. The list is account-wide and also shows under "At a
-merchant" in the settings.
+**Alt-click** any stack up to green in your bags and it becomes scrap: a gold coin appears in the
+corner of the slot and the next merchant you open buys it. Alt-click it again to take it off. The
+list is account-wide and also shows under "At a merchant" in the settings.
 
-Greys and scrap share one limit of twelve stacks per visit, so everything you sell stays in the
-merchant's buyback list until you walk away. Better than white is refused - buyback only saves you
-until you leave the vendor, and a misplaced Alt-click should not be able to sell a blue.
+**The first Alt-click sells that one stack and then forgets it. Alt-click again and it sells every
+time.** A third takes it off. The chat line and the item's own tooltip both say where you are and
+what the next click does, and the settings page marks the one-shots.
 
-A scrapped item is sold even when BagWarden would otherwise keep it for being a reagent, or food, or
-something a quest once wanted: you named that item, which beats our guess. What no list overrides is
-a hard keep - a quest item in your log, something unsellable, something too good.
+It starts at "once" because of which way the two mistakes fall. A mark you wanted and lost costs
+one more Alt-click, and you are standing at the merchant when you notice. A standing rule you did
+not mean sells your Linen Cloth three weeks later, when you have taken up tailoring, and nothing
+tells you. The cheap mistake goes first; the expensive one has to be asked for. Selling every time
+is still there for the Broken Fangs you will loot all night - it is one more press.
+
+Better than green is refused - buyback only saves you until you leave the vendor, and a misplaced
+Alt-click should not be able to sell a blue. Greys and scrap share one limit of twelve stacks per
+visit, so everything you do sell stays in the merchant's buyback list until you walk away.
+
+A scrapped item is sold even when BagWarden would otherwise keep it, in two cases. The first is a
+**guess** about what the item is for - that it is a reagent, or food, or something a quest once
+wanted, or that Skillwright says one of your professions uses it. You named that exact stack by
+hand, which is a better signal than any of those. The second is a rule that is only about
+**deleting**: your never-delete list, and the "let it delete green items too" setting. An item can
+honestly be both scrap and never-delete - a trinket you want turned into money but never binned -
+so marking it as scrap sells it and the never-delete list still stops the bag button destroying it.
+Neither list overrides the other; they are different verbs.
+
+What the scrap list does not override is a **fact**: a quest in your log wanting it, an item that
+cannot be sold, anything better than green, anything in use. Nor does it override **not knowing** -
+a tooltip BagWarden could not read, or another addon's rule that errored. "We don't know" is not
+something a scrap list has an opinion about, so those keep the item whatever you have marked.
 
 ## The on-screen row
 
@@ -95,18 +115,19 @@ accepts a real click, not because anything is hooked into a protected path.
 
 ## How it picks
 
-Everything ordinary is offered first, cheapest slot first - a grey item's vendor price is exactly
-what it is worth, since vendoring is all a grey is for. Crafting reagents and trade goods come after
-that whatever they cost, because their price tag says the least about them, and anything another
-YippYapp addon calls critical (your buff food) is offered only when nothing else is left. Ahead of
-all of it goes anything one of them calls spare - a surplus stack someone can replace for nothing,
-like the spare conjured bread beside the stack your AutoFeed macro eats, which stays.
+The cheapest slot goes first, across everything you carry. One promise, no categories - the item
+offered is the one that costs you least to lose, whatever kind of thing it is.
 
-A stack is judged by what the slot is worth: sell price times how many you hold. A stack that is
-already at least half full, and that you are still picking up, counts as what it will be worth full
-instead, so a nearly finished stack of good drops isn't binned to save a slot you would refill in a
-minute. Below half a stack it counts for what it is actually worth today - two of something is two
-of something, however big the stack could get.
+The single exception is your buff food, which another YippYapp addon has to name for us: that is
+offered only when there is nothing else left. A crafting reagent is *not* an exception, because what
+keeps a reagent is that it asks before it goes - not where it sits in the queue. Your mage's
+conjured bread tends to lead anyway, since it has no sell price at all.
+
+A stack is judged by what the slot is worth today: sell price times how many you hold. Nothing else.
+Twelve of something is twelve of something, however big the stack could get and however fast you are
+picking them up - BagWarden does not rank your bags on drops that have not happened. If a stack is
+one you would mind losing, what keeps it is that it asks before it goes, not where it sits in a
+queue sorted by price.
 
 ## Part of YippYapp
 

@@ -115,11 +115,18 @@ function BW.TestOrdering()
     pick("1c cheese before 93c parts", {
         stack(5, "Darnassian Bleu", 1, 1, 1, { classID = 0 }),
         stack(6, "Gyrostabilizer", 3, 31, 1, { classID = 7 }) })
-    pick("2s40 grey knife before 16c eye", {
+    -- Cheapest wins even when the cheap one is a reagent: what keeps a reagent is that it asks
+    -- before it goes, not where it sits in the queue.
+    pick("16c eye before a 2s40 grey knife", {
         stack(7, "Murloc Eye", 1, 16, 1, { classID = 7, craftingReagent = true }),
         stack(8, "Fisherman Knife", 1, 240, 0, { maxStack = 1 }) })
-    pick("spare stack before cheaper junk", {
-        stack(10, "Surplus Bread", 5, 2, 1, { classID = 0, tier = "spare" }),
+    -- Conjured food has no sell price, so it leads on price alone with no rank of its own.
+    pick("conjured bread (no price) before 1c junk", {
+        stack(10, "Conjured Bread", 5, 0, 1, { classID = 0, tier = "spare" }),
+        stack(11, "Chipped Bowl", 1, 1, 0, { maxStack = 1 }) })
+    -- A SURPLUS stack is spare too, but it has a price - and now sorts on it like anything else.
+    pick("1c junk before a 10c surplus stack", {
+        stack(12, "Surplus Bread", 5, 2, 1, { classID = 0, tier = "spare" }),
         stack(11, "Chipped Bowl", 1, 1, 0, { maxStack = 1 }) })
     pick("buff food only when nothing else", {
         stack(9, "Sagefish (+XP)", 4, 1, 1, { classID = 0, tier = "critical" }),

@@ -96,7 +96,10 @@ function BW.ReportPlan(fromHardware, skipAsk)
     BW.DeleteStack(plan.target, fromHardware, plan.action == "confirm" and skipAsk or nil)
 end
 
-local function OnClick(_, mouse)
+--- What a click on BagWarden's button does, wherever that button happens to live. Shared, because
+--- the button inside Baganator is a different frame built to Baganator's shape - but it has to do
+--- exactly the same thing, and two copies of this would eventually stop agreeing.
+function BW.OnBagButtonClick(_, mouse)
     if mouse == "RightButton" then
         if BW.planStale then BW.PlanNow() end
         local target = BW.plan and BW.plan.target
@@ -112,6 +115,7 @@ local function OnClick(_, mouse)
     -- Ctrl held means "don't ask me", read at the moment of the click.
     BW.ReportPlan(true, IsControlKeyDown())
 end
+local OnClick = BW.OnBagButtonClick
 
 -- ---------------------------------------------------------------------------
 -- Placing the button on whichever bag frame is open
@@ -170,19 +174,46 @@ local function RedrawTooltip()
     GameTooltip:Show()
 end
 
+--- The bag button itself, for a bag addon that wants to place it in its own window.
+function BW.BagButton()
+    if not button then BW.BuildButton() end
+    return button
+end
+
 function BW.UpdateButton()
     if not button then return end
+    local plan = BW.plan
+    -- 0.6 means "nothing in here is worth freeing". Before the first scan there is no plan at all,
+    -- which is a different thing and must not be drawn the same - otherwise the button fades in
+    -- every time you open your bags, because Refresh is debounced and the plan lands a fraction of
+    -- a second later. No plan yet draws at full strength, and the scan dims it if it was wrong.
+    local dim = (plan and not plan.action) and 0.6 or 1
+
+    -- The button inside Baganator is a SECOND frame, built to Baganator's shape rather than
+    -- Blizzard's (see Baganator.lua). It lives in their window and they decide where it sits; all
+    -- that is left for us is to keep it as bright or as dim as the plan deserves.
+    local hosted = BW.BaganatorButton and BW.BaganatorButton()
+    if hosted then
+        hosted:SetAlpha(dim)
+        -- Belt and braces with the OnShow in Baganator.lua: a SetParent we did not see still leaves
+        -- the level wrong, and a button drawn under the panel looks exactly like one that is absent.
+        hosted:SetFrameLevel(700)
+    end
+
     local host = Host()
+    -- Our own button belongs beside Blizzard's sort button and nowhere else. With no Blizzard bag
+    -- frame on screen it has no place to be - and that stays true when Baganator is installed,
+    -- because what Baganator is showing is the other button, not this one. Showing this one here
+    -- would leave a loose button floating on the screen with nothing holding it.
     if not host then button:Hide() return end
     button:SetParent(host)
     button:SetFrameLevel((host:GetFrameLevel() or 1) + 10)
     -- Room first, then the anchor: making room moves the search box we anchor to.
     BW.ApplySearchBox(host)
     Anchor(host)
-    local plan = BW.plan
     -- The free-slot count lives in the tooltip; a number on the round emblem only clutters it.
     -- Always clickable (a click then just says there's nothing to free); dimmed when idle.
-    button:SetAlpha(plan and plan.action and 1 or 0.6)
+    button:SetAlpha(dim)
     button:Show()
     -- The plan can change while the mouse sits on the button (a bag update, or the click itself),
     -- and the keybind changes it without the mouse being anywhere near. Both the tooltip and the
@@ -281,7 +312,13 @@ local function Attach()
     BW.Refresh()
 end
 
-local function Build()
+local Build
+--- Build the button now, for a caller that needs it before our own wiring gets round to it.
+function BW.BuildButton()
+    if not button then Build() end
+end
+
+function Build()
     if button then return end
     -- Built like Blizzard's sort button next to it (ContainerFrame.xml: 28x26, a square ADD
     -- highlight, a pushed state that sinks by a pixel), with our gold emblem as the icon.
@@ -317,10 +354,12 @@ local function Build()
     button:SetScript("OnMouseUp", function() IconAt(0, 0) end)
 
     -- This button destroys things, so it must not read as just another bronze button beside the
-    -- sort button. The body is tinted red and the hover glow with it; the gold pack on top keeps
-    -- its own colours, so the picture stays readable.
-    button:GetNormalTexture():SetVertexColor(1, 0.45, 0.4)
-    button:GetPushedTexture():SetVertexColor(1, 0.45, 0.4)
+    -- sort button. That used to mean tinting the body red as well - but the warning was carrying
+    -- weight it no longer has to: the icon was a dull medallion then, and is a bright gold pack now,
+    -- which nobody mistakes for a quiet button. A red square under it only made this button look
+    -- like a different addon from the one in Baganator's window, where the same icon sits clean.
+    -- So the body keeps the bronze it shares with the sort button, and the warning moves entirely
+    -- into the hover glow below - which is the moment it actually matters, just before the click.
 
     button:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
     local highlight = button:GetHighlightTexture()

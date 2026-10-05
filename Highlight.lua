@@ -22,6 +22,9 @@ local function Glow(itemButton, color)
 end
 
 --- The item button drawing a given bag slot, in whichever bag window is open.
+--- A bag addon that has replaced Blizzard's windows gets asked second: its buttons answer the same
+--- two questions (GetBagID, GetID), because they inherit the same Blizzard item-button mixin, so
+--- only the way to ENUMERATE them differs - and that part is whoever's addon it is to know.
 local function FindItemButton(bag, slot)
     for _, name in ipairs({ "ContainerFrameCombinedBags", "ContainerFrame1", "ContainerFrame2",
         "ContainerFrame3", "ContainerFrame4", "ContainerFrame5" }) do
@@ -32,6 +35,7 @@ local function FindItemButton(bag, slot)
             end
         end
     end
+    if BW.FindHostedItemButton then return BW.FindHostedItemButton(bag, slot) end
     return nil
 end
 

@@ -1,6 +1,6 @@
 -- BagWarden - free one bag slot per click, without ever deleting anything you need.
 -- Core.lua holds the saved variables, the event plumbing, the slash command and the loot clock
--- (which items we are still picking up, used by Value.lua's "potential value" rule).
+-- (when each item was last picked up, which breaks ties between two equally cheap stacks).
 local ADDON, BW = ...
 local LIB = LibStub("LibForever-1.0")
 
@@ -132,12 +132,6 @@ function BW.UpdateLootClock(items)
     BW.counts = seen
 end
 
---- True while we are still picking this item up.
-function BW.RecentlyLooted(itemID)
-    local at = BW.lootSeen[itemID]
-    return at ~= nil and (time() - at) < BW.LOOT_WINDOW
-end
-
 -- ---------------------------------------------------------------------------
 -- The never-delete list
 -- ---------------------------------------------------------------------------
@@ -157,18 +151,38 @@ end
 -- Separate from the never-delete list because they are different verbs, not opposites. Scrap says
 -- "sell it", never-delete says "don't destroy it", and an item can honestly be both: a trinket you
 -- want turned into money but never binned. So neither list overrides the other - the only thing
--- scrap changes is what a merchant visit sells.
+-- scrap changes is what a merchant visit sells, and the only thing never-delete changes is what
+-- the bag button will destroy. (Until this round the never-delete list DID block a sale, because
+-- it lives in the keep chain the merchant path reads too. See `overridable` in Protect.lua.)
+-- Two kinds of mark live in one table, and the VALUE says which:
+--   "once"   - sell it the next time, then forget it. Where the Alt-click cycle starts.
+--   true     - a standing rule about this kind of item, one more Alt-click along. Right for the
+--              Broken Fangs you will loot all night, where deciding once should be the end of it.
+-- Which one you get is the step you are on, NOT the item's quality. Quality only decides whether a
+-- thing may be marked at all. Reading the kind off the quality is what put a standing rule on
+-- somebody's Linen Cloth because they wanted the gold one afternoon - see CanScrap in Scrap.lua.
+-- `true` is also every value written before "once" existed, so nothing has to be migrated: the
+-- schema stays where it is and old lists keep meaning exactly what they meant.
 function BW.IsScrap(itemID)
-    return itemID ~= nil and BW.db and BW.db.scrap and BW.db.scrap[itemID] == true
+    return (itemID ~= nil and BW.db and BW.db.scrap and BW.db.scrap[itemID]) and true or false
 end
 
+--- Is this mark a one-shot? Only meaningful when IsScrap is true.
+function BW.ScrapOnce(itemID)
+    return itemID ~= nil and BW.db and BW.db.scrap and BW.db.scrap[itemID] == "once" or false
+end
+
+--- `on` is true for a standing mark, the string "once" for a one-shot, false to take it off.
 function BW.SetScrap(itemID, on)
     if not (itemID and BW.db) then return end
     BW.db.scrap = BW.db.scrap or {}
-    BW.db.scrap[itemID] = on and true or nil
+    BW.db.scrap[itemID] = (on == "once" and "once") or (on and true) or nil
     -- The coin on the slot has to appear on the same click that put it there, and Refresh is
     -- debounced - and skipped outright when nothing on screen needs a plan.
     if BW.MarkScrap then BW.MarkScrap() end
+    -- Baganator draws its own junk coin from our list, so it has to be told the list moved. This is
+    -- the same thing Baganator's own Scrap and SellJunk integrations do.
+    if BW.RefreshBaganator then BW.RefreshBaganator() end
     BW.Refresh()
 end
 
@@ -312,6 +326,13 @@ SlashCmdList.BAGWARDEN = function(msg)
         BW.Print("debug %s", BW.db.debug and "on" or "off")
     elseif msg == "settings" or msg == "options" then
         BW.OpenOptions()
+    elseif msg == "baganator" then
+        -- Every link in the Baganator hookup, and which one is broken.
+        if BW.BaganatorReport then BW.BaganatorReport() else BW.Print("no Baganator support built.") end
+    elseif msg == "order" then
+        -- The queue with the number each stack was actually sorted on, and everything held out of
+        -- it with the reason. "Why wasn't that offered first" has two unrelated causes.
+        BW.OrderReport()
     elseif msg == "sell" then
         -- What a merchant visit would do, and why anything is held back. Sells nothing, and works
         -- away from a merchant too - which is the point, since "it did not sell" is reported after
@@ -333,6 +354,9 @@ end
 -- /bagw free typed in chat.
 BINDING_HEADER_BAGWARDEN = "BagWarden"
 BINDING_NAME_BAGWARDEN_FREE_SLOT = "Free a bag slot"
+-- Works over any item tooltip, anywhere - which is what makes it the way to mark scrap inside a bag
+-- addon that has replaced Blizzard's bags and taken Alt-click for itself.
+BINDING_NAME_BAGWARDEN_MARK_SCRAP = "Mark the item under your cursor as scrap"
 
 function BagWardenFreeSlot()
     -- Ctrl held at the moment of the press skips the question, exactly like a Ctrl-click.

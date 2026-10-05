@@ -19,22 +19,80 @@ local ADDON, BW = ...
 
 local POOR = Enum.ItemQuality and Enum.ItemQuality.Poor or 0
 local COMMON = Enum.ItemQuality and Enum.ItemQuality.Common or 1
+local UNCOMMON = Enum.ItemQuality and Enum.ItemQuality.Uncommon or 2
 
 -- Same list Highlight.lua walks, for the same reason: these are the frames that draw bag slots.
 local HOSTS = { "ContainerFrameCombinedBags", "ContainerFrame1", "ContainerFrame2",
     "ContainerFrame3", "ContainerFrame4", "ContainerFrame5" }
 
---- Can this be scrapped at all? Grey and white only.
+--- Can this be scrapped at all? Everything up to green.
+---
 --- Selling is recoverable - the merchant holds twelve items in buyback - but only until you walk
---- away, and an Alt-click that landed on the wrong slot should not be able to turn a blue into
---- gold you can't undo. Green and better are refused out loud, so a misclick says something rather
---- than quietly doing the worst thing in the bag.
+--- away, so the line has to be somewhere. It is above green, not below: a green's vendor price is
+--- real money while you are levelling, and the misclick worth guarding against is the one that
+--- turns a BLUE into gold you can't undo. Blue and better are refused out loud, so a misclick says
+--- something rather than quietly doing the worst thing in the bag.
+---
+--- Quality decides nothing else. Which KIND of mark you get is a step in the cycle below, not a
+--- property of the item: quality says how good a thing is, and the question a mark answers is
+--- whether you meant a rule or a sale. Those are different axes, and reading one off the other is
+--- what put a standing rule on Linen Cloth for somebody who just needed the gold that afternoon.
 local function CanScrap(quality)
     quality = quality or 0
-    return quality == POOR or quality == COMMON
+    return quality == POOR or quality == COMMON or quality == UNCOMMON
 end
 
---- Alt-click on one bag slot: add it to the scrap list, or take it off again.
+--- Move one item one step round the scrap cycle: unmarked -> sell once -> sell every time -> off.
+--- `link` and `quality` are what the caller already knows; both are optional and looked up when
+--- missing.
+--- Separate from any click, because there is more than one way to reach it: Alt-click in Blizzard's
+--- bags, and the "mark as scrap" keybind over any item tooltip anywhere - including inside a bag
+--- addon that has replaced Blizzard's bags entirely.
+---
+--- Three steps on one gesture, rather than two steps and a modifier. A modifier would be a second
+--- thing to know about and would have to not collide with Shift (split a stack) or Ctrl (try it
+--- on), and a step you can reach by pressing the same key again is one the chat line can simply
+--- tell you about - which is what every line below does.
+function BW.ToggleScrap(itemID, link, quality)
+    itemID = tonumber(itemID)
+    if not itemID then return end
+    local details = BW.ItemInfo(link, itemID)
+    link = link or (details and details.name) or ("item " .. itemID)
+    local shown = link
+
+    if BW.IsScrap(itemID) then
+        if BW.ScrapOnce(itemID) then
+            BW.SetScrap(itemID, true)
+            BW.Print("%s is scrap every time now - Alt-click again to take it off.", shown)
+        else
+            BW.SetScrap(itemID, false)
+            BW.Print("%s is no longer scrap.", shown)
+        end
+        return
+    end
+
+    -- Quality can be nil while the client is still filling the item in; refuse rather than guess.
+    quality = quality or (details and details.quality)
+    if quality == nil then
+        BW.Print("can't tell what %s is yet - try again in a moment.", shown)
+        return
+    end
+    if not CanScrap(quality) then
+        BW.Print("%s is better than green, so it won't be scrapped. Sell it yourself if you mean to.",
+            shown)
+        return
+    end
+
+    -- "this one" and the next step, both said out loud. The difference between the two marks is
+    -- invisible once the window is shut, so the moment of making one is the moment to say it.
+    BW.SetScrap(itemID, "once")
+    BW.Print("%s is scrap - the next merchant buys it, then it comes off the list.", shown)
+    BW.Print("Alt-click it again to sell it every time instead.")
+end
+
+--- Alt-click on one bag slot. Blizzard's bags only: inside Baganator, Alt-click already means
+--- "highlight similar items", and firing on top of that would be us talking over the bag addon the
+--- player chose. There, the keybind below is the way in.
 local function Toggle(itemButton)
     if not IsAltKeyDown() then return end
     local bag, slot = itemButton:GetBagID(), itemButton:GetID()
@@ -42,31 +100,25 @@ local function Toggle(itemButton)
 
     local info = C_Container.GetContainerItemInfo(bag, slot)
     if not (info and info.itemID) then return end
-    local itemID = info.itemID
-    local name = info.itemName or info.hyperlink or ("item " .. itemID)
+    BW.ToggleScrap(info.itemID, info.hyperlink, info.quality)
+end
 
-    if BW.IsScrap(itemID) then
-        BW.SetScrap(itemID, false)
-        BW.Print("%s is no longer scrap.", info.hyperlink or name)
+--- The item under the cursor, from whatever tooltip is showing it. GameTooltip:GetItem is the one
+--- lookup that works the same in Blizzard's bags, in a bag replacement, in the loot window and on a
+--- chat link - and it is proven on this client by four installed addons and two of our own.
+function BagWardenMarkScrap()
+    if not (GameTooltip and GameTooltip.GetItem) then return end
+    local ok, _, link = pcall(GameTooltip.GetItem, GameTooltip)
+    if not ok or not link then
+        BW.Print("point at an item first, then press the key.")
         return
     end
-
-    -- The quality on the container info can be nil while the client is still filling the item in;
-    -- fall back to what we know, and refuse rather than guess when we know nothing.
-    local details = BW.ItemInfo(info.hyperlink, itemID)
-    local quality = info.quality or (details and details.quality)
-    if quality == nil then
-        BW.Print("can't tell what %s is yet - try again in a moment.", name)
+    local itemID = C_Item and C_Item.GetItemInfoInstant and C_Item.GetItemInfoInstant(link)
+    if not itemID then
+        BW.Print("couldn't read that item.")
         return
     end
-    if not CanScrap(quality) then
-        BW.Print("%s is better than white, so it won't be scrapped. Sell it yourself if you mean to.",
-            info.hyperlink or name)
-        return
-    end
-
-    BW.SetScrap(itemID, true)
-    BW.Print("%s is scrap - the next merchant will buy it.", info.hyperlink or name)
+    BW.ToggleScrap(itemID, link)
 end
 
 -- One hook per button, ever. The flag lives on the button rather than in a table of our own so it
@@ -180,8 +232,15 @@ if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and Enum and
             -- not limited to the bags the way the hint below is.
             -- Gold, the colour of the coin on the slot and of BagWarden's own name, not grey.
             -- A grey line reads as something the game has switched off.
-            tt:AddLine("|cffc9a227BagWarden|r  |cffffd100scrap - the next merchant buys this|r")
-            tt:AddLine("|cffc9a227Alt-click in your bags to take it off the list|r")
+            -- Both lines say where the cycle is AND what the next Alt-click does, because the
+            -- two marks look identical in the bags - same coin, same slot.
+            if BW.ScrapOnce and BW.ScrapOnce(itemID) then
+                tt:AddLine("|cffc9a227BagWarden|r  |cffffd100scrap - the next merchant buys this one|r")
+                tt:AddLine("|cffc9a227Alt-click in your bags to sell it every time|r")
+            else
+                tt:AddLine("|cffc9a227BagWarden|r  |cffffd100scrap - every merchant buys this|r")
+                tt:AddLine("|cffc9a227Alt-click in your bags to take it off the list|r")
+            end
             return
         end
 
@@ -198,7 +257,7 @@ if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and Enum and
         local details = BW.ItemInfo(nil, itemID)
         local quality = details and details.quality
         if quality ~= nil and CanScrap(quality) then
-            tt:AddLine("|cffc9a227Alt-click in your bags: sell at the next merchant|r")
+            tt:AddLine("|cffc9a227Alt-click in your bags: sell this one at the next merchant|r")
         end
     end)
 end

@@ -42,8 +42,28 @@ local function TooltipSaysQuest(item)
     return verdict
 end
 
---- Why this stack is kept: "hard"/"soft", a short reason, and for the one case that overrules our
---- own rules, a third value: mustAsk, meaning the question can never be skipped.
+--- Why this stack is kept: "hard"/"soft", a short reason, and two flags.
+---   mustAsk     - the confirm popup can never be skipped (the one case that overrules our rules).
+---   overridable - an explicit scrap mark may sell this anyway.
+---
+--- This chain answers one question - may BagWarden take this item away - for two different verbs.
+--- Deleting is forever; selling sits in the merchant's buyback list until you walk away. So some
+--- of what is written here is a reason not to DELETE and no reason at all not to sell, and until
+--- the second flag existed, every line stopped both equally.
+---
+--- Two kinds of keep are overridable:
+---   * a GUESS about what the item is for - Skillwright's opinion that this is a First Aid reagent,
+---     or our own "keep crafting reagents" setting. Naming one stack by hand is a better signal
+---     than any inference we or a neighbour can make.
+---   * a keep that is only about DELETING - your never-delete list, and the delete-greens setting.
+---     An item can honestly be both scrap and never-delete: a trinket you want turned into money
+---     but never binned.
+---
+--- Nothing else is. A fact about the item is not overridable - a quest in your log wants it, it
+--- cannot be sold, it is too good, it is in use - and neither is NOT KNOWING: a provider that
+--- threw, a tooltip we could not read, a quest log we could not walk. Those keep the item whatever
+--- anyone has marked, because the honest reading of them is "we do not know", and a scrap list has
+--- no opinion about what we do not know.
 --- Layers, strongest first.
 function BW.KeepReason(item)
     if not item then return "hard", "unknown item" end
@@ -62,14 +82,25 @@ function BW.KeepReason(item)
     if item.classID == CLASS_QUEST then return "hard", "quest item" end
     if item.bindType == BIND_QUEST then return "hard", "quest item" end
 
-    -- 3. Your own never-delete list.
-    if BW.IsIgnored(item.itemID) then return "hard", "on your never-delete list" end
+    -- 3. Your own never-delete list. OVERRIDABLE: this list says "do not destroy this", which is
+    -- not the same as "do not sell this", and Core.lua has said so since the list was written. An
+    -- item you marked as scrap AND put here sells and is never deleted, which is both instructions
+    -- honoured rather than the older one silently winning.
+    if BW.IsIgnored(item.itemID) then return "hard", "on your never-delete list", nil, true end
 
     -- 4. Quality and value. Green is the highest BagWarden will ever touch, and only when the player
     -- has said so; blue and better are never deletable, whatever the settings say.
     local quality = item.quality or 0
+    -- Blue and better is a FACT-shaped line we never cross, and the one thing the scrap list is
+    -- not allowed to argue with: an Alt-click that landed on the wrong slot must not be able to
+    -- turn a blue into gold. Marking one is refused at the click, so this is defence in depth.
     if quality > UNCOMMON then return "hard", "too good to delete" end
-    if quality == UNCOMMON and not (BW.db and BW.db.allowGreen) then return "hard", "green or better" end
+    -- Green, on the other hand, is OVERRIDABLE: this is the delete-greens setting, so it is our
+    -- rule about deleting. Alt-clicking a green onto the scrap list sells it without needing that
+    -- setting turned on, because selling a green you pointed at is not the risk it guards against.
+    if quality == UNCOMMON and not (BW.db and BW.db.allowGreen) then
+        return "hard", "green or better", nil, true
+    end
     -- No sell price usually means "not for selling": a hearthstone, a key. That is a GUESS about
     -- how much the item matters, and for one class of item the guess is simply wrong - a mage's
     -- conjured bread is free to remake, and costs nothing to lose. So a provider that knows the
@@ -104,7 +135,9 @@ function BW.KeepReason(item)
     for _, fn in ipairs(BW.protectors) do
         local ok, reason = pcall(fn, item)
         if not ok then return "hard", "a keep rule failed" end
-        if reason then return "hard", reason end
+        -- OVERRIDABLE: a neighbour's opinion about this item. Good enough to keep it by default
+        -- and not good enough to overrule the player naming it.
+        if reason then return "hard", reason, nil, true end
     end
 
     -- 5b. Crafting reagents, three ways (BW.db.reagentKeep):
@@ -116,10 +149,12 @@ function BW.KeepReason(item)
     --   "none" - no special treatment.
     if item.craftingReagent then
         local mode = (BW.db and BW.db.reagentKeep) or "mine"
+        -- OVERRIDABLE both ways: one is a setting, the other is us declining to guess whose
+        -- reagent it is. Neither is a fact about this stack.
         if mode == "all" then
-            return "hard", "crafting reagent"
+            return "hard", "crafting reagent", nil, true
         elseif mode == "mine" and not (BW.ProviderPresent and BW.ProviderPresent("SkillwrightReagents")) then
-            return "hard", "crafting reagent"
+            return "hard", "crafting reagent", nil, true
         end
     end
 

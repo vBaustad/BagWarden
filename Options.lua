@@ -5,56 +5,44 @@
 -- DOES is in the row's tooltip, not printed under it - a paragraph under each of a dozen toggles
 -- turns a page you skim into a page you have to read, and pushes the twelfth setting off the screen.
 --
--- Prose survives in exactly three places, where a bare label would be a guess: the reagent choice,
--- the asking-first choice, and the on-screen row. Those three explain a decision the player has to
--- make, not a switch they can flick and see the result of.
+-- Prose is one line per section at most. A settings page is a page you skim; the moment a section
+-- carries a paragraph, the paragraph is what you see and the settings are what you hunt for. The
+-- player said this page was "ekstremt bloated med alt for mye tekst", and it was: its help block
+-- ran 470 words against 167-289 in the five sibling addons, with seven more paragraphs above it.
+--
+-- So the rule is: the row label says WHAT, its tooltip says the detail, and the help block at the
+-- bottom is the only place allowed more than a sentence. Anything that was said twice is now said
+-- once, and anything a reader only wants once ever - how BagWarden pairs with the other YippYapp
+-- addons - lives on the CurseForge page, not here.
 local ADDON, BW = ...
 local LIB = LibStub("LibForever-1.0")
 
 local category, panel
 
--- The in-game explanation of how BagWarden is used, at the bottom of this page. It is written here
--- rather than moved from the welcome window, because BagWarden's welcome page never had a body -
--- only a title, a one-line subtitle and an Open button. So this is the first time the addon explains
--- itself anywhere in the game, which is the thing the welcome removal was meant to protect.
+-- The in-game explanation, at the bottom of this page. BagWarden's welcome window never had a
+-- body, so this is the only place in the game the addon explains itself - which is why it is three
+-- short sections rather than none, and why it is not also four paragraphs higher up the page.
 -- The library owns where it sits and how it wraps; the words are ours.
 local HELP = {
     { "What it does",
         "One button in your bag window frees one bag slot per click, by deleting the least valuable "
-        .. "junk stack you carry. The tooltip names the item before you click it, and hovering the "
-        .. "button lights that slot up in red, so nothing happens that you did not read first.\n\n"
-        .. "It never deletes anything you need: quest items, anything a quest in your log asks for, "
-        .. "profession tools and recipes, the reagents your own professions use, anything that cannot "
-        .. "be sold, and anything better than green. When a check cannot be made, the item is kept." },
+        .. "junk stack you carry. The tooltip names the item first, and hovering lights that slot "
+        .. "up in your bags.\n\n"
+        .. "It never deletes quest items, anything a quest in your log wants, your professions' "
+        .. "reagents, anything that cannot be sold, or anything better than green. When a check "
+        .. "cannot be made, the item is kept." },
 
-    { "Getting started",
-        "There is nothing to set up. Open your bags and the button is next to Blizzard's sort button.\n\n"
-        .. "A plain click frees one slot. Hold Ctrl to skip the question on things that would normally "
-        .. "ask. Right-click the button to put what it was about to delete on your never-delete list. "
-        .. "You can also bind a key: look for \"Free a bag slot\" under BagWarden in the keybindings.\n\n"
-        .. "Alt-click any grey or white stack in your bags to call it scrap - a gold coin marks the "
-        .. "slot, and the next merchant you open buys it." },
+    { "Using it",
+        "Open your bags: the button sits next to Blizzard's sort button. Hold Ctrl to skip the "
+        .. "question on things that would ask. Right-click it to protect what it was about to "
+        .. "delete. There is a keybind too, under BagWarden.\n\n"
+        .. "Alt-click any stack up to green and the next merchant buys that one. Alt-click again "
+        .. "to sell it every time." },
 
     { "Good to know",
-        "BagWarden can only delete inside a real click or keypress. That is the game's rule, not a "
-        .. "setting: deleting from a timer or a chat command silently does nothing. So there is no "
-        .. "\"clean my bags\" button and never will be - one click frees one slot, which is also the "
-        .. "right way round for something that cannot be undone.\n\n"
-        .. "Selling is different, because it can be undone. At a merchant BagWarden sells your greys "
-        .. "and your scrap, up to twelve stacks a visit, so everything stays in the merchant's buyback "
-        .. "list until you walk away.\n\n"
-        .. "Green items are never deleted unless you allow them, and then they always ask first, "
-        .. "however the other settings are set. Blue and better are never deletable at all.\n\n"
-        .. "Everything BagWarden has deleted is listed further up this page, newest first, including "
-        .. "whether Ctrl was held - so \"I never confirmed that\" has an answer." },
-
-    { "With the other YippYapp addons",
-        "BagWarden asks the others what your things are for, and keeps what they vouch for. Skillwright "
-        .. "tells it which reagents your professions actually use, so another profession's ore is not "
-        .. "protected for nothing. AutoFeed tells it which food is your buff food, which is then offered "
-        .. "only when there is nothing else left - and which conjured food is spare, which is offered "
-        .. "first. Guildhall tells it what you have listed. None of them can make something deletable "
-        .. "that BagWarden would otherwise keep, with one exception that always asks first." },
+        "The game only lets an addon delete inside a real click or keypress, so there is no \"clean "
+        .. "my bags\" button and never will be. Selling is different: it can be undone from the "
+        .. "merchant's buyback list until you walk away." },
 }
 
 -- The page is hosted in the YippYapp window, which decides how wide it is, so every block of text
@@ -274,8 +262,8 @@ function BW.RegisterOptions()
     version:SetPoint("BOTTOMLEFT", head, "BOTTOMRIGHT", 8, 1)
     version:SetText("v" .. BW.version)
     anchor = head
-    Para("Free one bag slot per click. BagWarden picks the least valuable junk stack, tells you "
-        .. "what it will do before you click, and never touches quest items or anything better than green.")
+    Para("Free one bag slot per click - the least valuable junk stack you carry, named in the "
+        .. "tooltip before you click it.")
 
     -- Whether BagWarden has an icon at all. This used to live on the shared YippYapp page, next to
     -- a "group the buttons" toggle; grouping is fixed on now, so the only question left is this one,
@@ -293,13 +281,14 @@ function BW.RegisterOptions()
 
     Section("At a merchant")
     local sell = Toggle("Sell all grey items automatically",
-        "When you open a vendor, BagWarden sells your grey items and says what they came to. Items on "
-        .. "your never-delete list are never sold.",
+        "When you open a vendor, BagWarden sells your grey items and says what they came to. Up to "
+        .. "twelve stacks go per visit, greys and scrap together, so everything stays in the "
+        .. "merchant's buyback list until you walk away. A grey on your never-delete list is left "
+        .. "alone; one you put on the scrap list by hand is sold, because that list is about what "
+        .. "gets destroyed, not what gets sold.",
         function(on) BW.db.sellGreys = on end)
-    Para("Alt-click any grey or white stack in your bags to call it scrap: the next merchant you open "
-        .. "buys it, and you never have to decide about that item again. Alt-click it a second time to "
-        .. "take it off the list. Up to twelve stacks go per visit, greys and scrap together, so "
-        .. "everything stays in the merchant's buyback list until you walk away.", -12)
+    Para("Alt-click any stack up to green in your bags: the next merchant buys that one, then "
+        .. "forgets it. Alt-click again to sell it every time, and once more to take it off.", -12)
     local scrapList = Para("", -10)
     local clearScrap = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     clearScrap:SetSize(160, 22)
@@ -324,18 +313,16 @@ function BW.RegisterOptions()
     -- update instead of only while a bag window is open (see BW.Refresh).
     Section("The on-screen row")
     local barOn = Toggle("Show a row of icons on screen",
-        "Turning this on is the only setting here that costs anything: BagWarden then rescans your bags "
-        .. "as they change even while they are shut, because something on screen now depends on it.",
+        "The next few stacks BagWarden would delete, cheapest first, without opening your bags. "
+        .. "Ctrl-click an icon to act on it, right-click one to protect it, and drag the row to move "
+        .. "it. An amber edge means it will ask before it goes, however you click it.\n\n"
+        .. "This is the only setting here that costs anything: BagWarden then rescans your bags as "
+        .. "they change even while they are shut, because something on screen depends on it.",
         function(on)
             BW.db.barEnabled = on
             BW.ApplyBarSettings()
             if panel.OnRefresh then panel.OnRefresh() end
         end)
-    Para("The next few stacks BagWarden would delete, cheapest first, without opening your bags. A plain "
-        .. "click does nothing on purpose - Ctrl-click an icon to act on it, and right-click one to put "
-        .. "that item on your never-delete list. Anything that would ask before it goes has an amber edge, "
-        .. "and still asks however you click it. Drag the row to move it.", -6)
-
     local barCount = Slider("How many icons", "How many stacks the row shows at once.", 1, 10,
         function() return BW.db.barCount or 4 end,
         function(v) BW.db.barCount = v BW.ApplyBarSettings() end)
@@ -376,9 +363,8 @@ function BW.RegisterOptions()
     -- How chatty the confirm popup is. Green and better can never be deleted, so the choice only
     -- covers grey and white.
     Section("Asking first")
-    Para("BagWarden always asks before deleting a crafting reagent, anything you use (food, drink, "
-        .. "potions, bandages) and anything a quest has ever wanted. On top of that you can have it ask "
-        .. "by quality.")
+    Para("Reagents, food, drink, potions, bandages and anything a quest has ever wanted always ask "
+        .. "first. On top of that you can ask by quality.")
     local askChoices = {
         { value = 2, label = "Only reagents and things you use", note = "the least clicking" },
         { value = 1, label = "Also ask about white items" },
@@ -398,8 +384,7 @@ function BW.RegisterOptions()
 
     -- Everything BagWarden is keeping right now, grouped by why.
     Section("Protected items")
-    Para("What's in your bags right now that BagWarden will not delete. Quest items, items you can't sell "
-        .. "and anything better than green are always kept, with no setting needed.")
+    Para("What BagWarden is keeping in your bags right now, and why.")
     local profession = Toggle("Keep profession gear",
         "On by default. Keeps mining picks, skinning knives, fishing poles, enchanting rods and the like, "
         .. "anything that gives profession skill (+5 Mining gloves), anything that needs a profession, and "
@@ -410,8 +395,6 @@ function BW.RegisterOptions()
             BW.Refresh()
             if panel.OnRefresh then panel.OnRefresh() end
         end)
-    Para("Ore, stone, cloth, leather and herbs - anything the game marks \"Crafting Reagent\". Reagents "
-        .. "that aren't kept still ask before they go, like anything else you might want.", -12)
     local reagentChoices = {
         { value = "mine", label = "Keep reagents my professions use" },
         { value = "all", label = "Keep every crafting reagent" },
@@ -465,8 +448,8 @@ function BW.RegisterOptions()
     h4Line:SetHeight(1)
     h4Line:SetPoint("LEFT", h4, "RIGHT", 8, 0)
     h4Line:SetPoint("RIGHT", f, "RIGHT", -LEFT, 0)
-    local logNote = Note("Everything BagWarden has deleted on this account, newest first. The last "
-        .. BW.LOG_MAX .. " are kept.")
+    local logNote = Note("Deleted on this account, newest first. The last "
+        .. BW.LOG_MAX .. " are kept, with whether Ctrl was held.")
     local logList = Note("")
     local clearLog = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     clearLog:SetSize(160, 22)
@@ -524,14 +507,16 @@ function BW.RegisterOptions()
     --- The scrap list, said as a sentence rather than a table: it is usually a handful of items, and
     --- the only thing you do to one is Alt-click it again in your bags.
     local function ScrapText()
-        local ids = {}
-        for itemID in pairs(BW.db.scrap or {}) do ids[#ids + 1] = itemID end
-        if #ids == 0 then
-            return "Nothing on the scrap list yet."
-        end
         local names = {}
-        for _, itemID in ipairs(ids) do
-            names[#names + 1] = C_Item.GetItemNameByID(itemID) or ("item " .. itemID)
+        for itemID in pairs(BW.db.scrap or {}) do
+            local name = C_Item.GetItemNameByID(itemID) or ("item " .. itemID)
+            -- A one-shot is a different promise from a standing rule, and the list is the one place
+            -- you can see the whole thing at once - so it has to say which each one is. Sorting the
+            -- finished strings keeps the suffix with its name.
+            names[#names + 1] = BW.ScrapOnce(itemID) and (name .. " |cff808080(once)|r") or name
+        end
+        if #names == 0 then
+            return "Nothing on the scrap list yet."
         end
         table.sort(names)
         return "|cffffd100Scrap:|r " .. table.concat(names, ", ")
@@ -589,9 +574,9 @@ function BW.RegisterOptions()
         end
         local canTell = BW.ProviderPresent and BW.ProviderPresent("SkillwrightReagents")
         reagentMineNote:SetText(canTell
-            and "Skillwright is telling BagWarden which reagents your professions use."
-            or "Telling your professions' reagents apart needs Skillwright. Without it, the first choice "
-                .. "keeps every reagent rather than guessing that one is someone else's.")
+            and "Skillwright is naming your professions' reagents."
+            or "Without Skillwright, BagWarden cannot tell whose reagent is whose, so the first "
+                .. "choice keeps them all.")
         for index, choice in ipairs(askChoices) do
             askButtons[index]:SetChecked((BW.db.askFrom or 2) == choice.value)
         end

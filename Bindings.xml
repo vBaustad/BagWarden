@@ -2,4 +2,7 @@
 	<Binding name="BAGWARDEN_FREE_SLOT" category="BINDING_HEADER_BAGWARDEN">
 		BagWardenFreeSlot();
 	</Binding>
+	<Binding name="BAGWARDEN_MARK_SCRAP" category="BINDING_HEADER_BAGWARDEN">
+		BagWardenMarkScrap();
+	</Binding>
 </Bindings>

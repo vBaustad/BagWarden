@@ -1,5 +1,150 @@
 # BagWarden
 
+## 0.1.0-beta6
+
+- **Greens can go on the scrap list now**, and the Alt-click has three steps rather than two:
+  the first sells that stack and forgets it, the second sells it every time, the third takes it
+  off. The chat line and the item tooltip both say where you are and what the next press does, and
+  the settings page marks the one-shots.
+- It starts at "once" because of which way the two mistakes fall. A mark you wanted and lost costs
+  one more Alt-click, at the merchant, where you notice. A standing rule you did not mean sells
+  your Linen Cloth three weeks later when you have taken up tailoring, and says nothing. Marking
+  something for the gold you need this afternoon should not quietly become a rule for the month.
+- Tying it to quality - greens once, whites forever - was the wrong axis, and only looked right
+  because greens made the case so plainly. Quality says how good a thing is; the question a mark
+  answers is whether you meant a rule or a sale.
+- Better than green is still refused at the Alt-click, and said out loud. That is the misclick
+  worth guarding against: buyback only saves you until you leave the vendor.
+- Two stacks of the same green both go. The mark is spent by the merchant visit rather than by the
+  first sale, so marking a green you have two of means what you would expect it to mean.
+- **Your never-delete list no longer blocks a sale you asked for.** It never should have: that list
+  says "do not destroy this", which is not the same as "do not sell this", and BagWarden's own code
+  has said so in a comment since the list was written. An item can honestly be both - a trinket you
+  want turned into money but never binned - and now both instructions are honoured instead of the
+  older one silently winning. A grey you never marked is still left alone.
+- Selling a scrapped green no longer needs "let it delete green items too" turned on. That setting
+  is about deleting, and these are different verbs.
+
+- **The settings page had far more text than settings.** It is cut by well over half: 743 words of
+  prose down to 280. The page is a list of rows to skim again, rather than a wall to read with the
+  settings hidden in it.
+- Nothing a player needs was thrown away. What a setting does moved into the tooltip of the row it
+  belongs to, where it costs no space and is read exactly when it is wanted - so the on-screen
+  row's Ctrl-click, right-click and drag now sit on the toggle that creates the row.
+- What went for good was the duplication. The help block at the bottom had grown to 470 words
+  against 167-289 in the other five YippYapp addons, and was re-explaining green items, the
+  deletion log and the Ctrl-click rule that the settings above it already covered. How BagWarden
+  pairs with the other addons is on the CurseForge page, which is where you read it once.
+
+- **Marking something as scrap now beats a guess about what it is for.** Putting Briarthorn on the
+  scrap list and then being told "protected: First Aid reagent" is BagWarden arguing with you: that
+  is Skillwright's inference about the item, not a fact about it, and you named that exact stack by
+  hand. The same goes for our own "keep crafting reagents" setting.
+- It still never beats a fact, and that line has not moved: a quest in your log wanting it, an item
+  that cannot be sold, anything too good, anything in use. Nor does it beat not knowing - a tooltip
+  we could not read, or another addon's rule that threw an error - because "we don't know" is not
+  something your scrap list has an opinion about.
+- Deleting is unchanged. Scrap says sell, and only sell.
+
+- The bag button in Blizzard's own bags now wears the same face as the one in Baganator's window -
+  the new icon on the plain bronze body, instead of the same icon on a red square. One addon should
+  not look like two depending on which bag window you use.
+- The warning that this button destroys things has not gone: it lives in the red hover glow, which
+  is the moment it matters, just before the click. The icon is also a bright gold pack now rather
+  than the dull medallion it was when the red body was added, and that does its own share.
+
+- Hovering the button inside Baganator now lights up the slot it would delete, the same as it does
+  in Blizzard's bags. It was looking for Blizzard's bag windows, which are not there when Baganator
+  has replaced them.
+
+- Fixed the bag button fading in every time you opened your bags. A dimmed button means "nothing in
+  here is worth freeing", and before the first scan there is no answer yet - which is a different
+  thing and was being drawn the same, for the fraction of a second it took the scan to land.
+- A new button icon, in the style WoW uses: one object, big shapes, and far less fine detail than
+  the old one, which turned to mush at the size the button is actually drawn.
+
+- Fixed BagWarden's button being invisible inside Baganator. It was there the whole time - correctly
+  placed, and it even showed its tooltip when you pointed at it - but drawn underneath Baganator's
+  panel, which from the outside looks exactly like a button that was never added.
+
+- **Inside Baganator, BagWarden's button is Baganator's own button** - it inherits their template rather than
+  imitating it, so it is the same size, the same shape and the same face as the buttons beside it,
+  with our icon in the middle. It is also handed to Baganator's skin system, so it follows whichever
+  skin you have chosen instead of looking like a Blizzard button that wandered in.
+- It is a second button, not the one from Blizzard's bags. That one is deliberately shaped to match
+  Blizzard's sort button, which is exactly the wrong thing to be in somebody else's window. Both do
+  the same thing on a click, from the same code.
+
+- New: `/bagw baganator` reports every link in the Baganator hookup and which one is broken, plus
+  where the button actually ended up. It exists because the first two attempts at this failed
+  silently - a hookup that threw looked exactly like Baganator not being installed, which is no use
+  to anyone. Failures are said out loud now rather than whispered to a debug log nobody has on.
+
+- **BagWarden works inside Baganator now.** The bag button appears in Baganator's own backpack
+  window, and your scrap list shows there as Baganator's junk coin - drawn by Baganator, in the
+  corner and style you chose for it, rather than us painting our own marker onto somebody else's
+  bags. It registers as a junk source the same way Baganator's own Scrap and SellJunk integrations
+  do, so if you already use one of those, BagWarden simply appears in the list and you pick.
+- **New keybind: "Mark the item under your cursor as scrap."** It reads whatever tooltip you are
+  pointing at, so it works in Baganator, in Blizzard's bags, in the loot window and on a chat link.
+  This is the way to mark scrap inside Baganator, because Alt-click already means "highlight similar
+  items" there and talking over the bag addon you chose would be rude.
+- Alt-click is unchanged in Blizzard's own bags, where nothing else claims it.
+
+- **Fixed: your scrap was not always sold at a merchant, and where it sat in your bags decided it.**
+  BagWarden sells at most twelve stacks a visit, so everything stays in the merchant's buyback list -
+  but it walked the bags in slot order and stopped at twelve, so twelve greys in earlier slots could
+  spend the whole visit before the scrap was reached. Whether that happened changed every time you
+  looted, which is why it worked sometimes. Scrap now gets the budget first: it is a standing
+  instruction you gave item by item, and selling greys is BagWarden's own idea.
+- This also explains it differing depending on whether another addon sells your junk too. If that
+  one gets to the greys first, BagWarden's twelve are free for your scrap; if BagWarden goes first,
+  they were not. Running both is fine now - but if your other addon already sells greys, you can
+  turn "sell all grey items automatically" off here and let it, since the scrap list is ours alone.
+
+- **A merchant visit that sells none of your scrap now says why.** It used to say nothing at all,
+  and silence reads the same whether BagWarden refused every stack or never ran - which is no use to
+  anyone standing at a vendor wondering. It names the first stack it held back and the reason, once,
+  and points at `/bagw sell` for the rest.
+- Only scrap gets this. A grey held back is BagWarden being careful on its own initiative, and
+  nobody asked it about that one; a scrapped item is a standing instruction it is not carrying out,
+  and staying quiet there is the addon quietly disagreeing with you.
+- Fixed a stack that passes every rule and still silently does not sell: if its slot changed between
+  the scan and the sale, refusing was right but saying nothing was not. It now reports how many.
+
+- **A stack is now worth what it is worth, and nothing else.** A part-stack you were still picking up
+  used to be ranked at what the full stack would fetch, from half a stack upwards. That is gone. It
+  was a prediction - eighteen more milk may not drop - and it meant the queue sorted on a number that
+  was never on screen: twelve copper of bread would sit behind a fifteen copper grey while the only
+  figure you could see said twelve.
+- It was also not the same rule at different stack sizes. The mark-up was exactly double at the
+  half-way point whatever the stack holds, so ONE of a two-stack was counted as two, the same
+  treatment ten-of-twenty got. "Nearly finished" and "a single item" are not the same claim.
+- What protects a stack you are farming was never the ordering: trade goods and reagents ask before
+  they go. The ordering only decided which question came first.
+
+- **The row now admits when it sorted a stack on a different number than the one it shows you.** A
+  part-stack you are still filling is deliberately ranked at what the full stack will fetch, so a
+  12c stack of bread can sit behind a 15c grey - which looks like a broken queue, because the only
+  number on screen said 12c. The tooltip says "queued as 20c" when the two differ. The rule is
+  unchanged; it just stops being invisible.
+- New: `/bagw order` prints the queue with the number each stack was actually ranked on, and then
+  everything in your bags that is NOT in the queue, grouped by the protection keeping it out. Those
+  are two unrelated reasons a cheap item can fail to be offered first, and nothing could tell them
+  apart before.
+
+- **The queue is one promise again: the cheapest slot first, across everything you carry.** Crafting
+  reagents and trade goods used to be held back as a group, on the grounds that a Murloc Eye's 16c
+  says nothing about what it is worth to someone levelling Alchemy. That was true and it was the
+  wrong lever: what keeps a reagent is that it ASKS before it goes, and the ordering was only
+  deciding which question you got asked first. So a 16c reagent is now offered before a 2s40 grey
+  knife, and it still asks.
+- Your buff food is the one exception and still goes last - which has to be said explicitly, because
+  cheap buff food would otherwise sort to the very front.
+- Conjured food still tends to lead without a rule of its own: it has no sell price at all. A surplus
+  stack of ordinary food, which does have a price, is now ranked on it like anything else - it had
+  been pushed in front of junk that cost less, which was the queue disagreeing with itself.
+
 ## 0.1.0-beta5
 
 - Fixed BagWarden possibly selling nothing at all at a merchant. It asked whether Blizzard's merchant
