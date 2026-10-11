@@ -58,7 +58,8 @@ function BW.FillTooltip(tooltip)
         tooltip:AddLine(click, 0.6, 0.6, 0.6)
         -- Only worth saying when the next click would actually stop and ask.
         if plan.action == "confirm" then
-            tooltip:AddLine("Ctrl-click: delete without asking", 0.6, 0.6, 0.6)
+            tooltip:AddLine(BW.ModifierLabel("skip") .. "-click: delete without asking",
+                0.6, 0.6, 0.6)
         end
         tooltip:AddLine("Right-click: never delete this item", 0.6, 0.6, 0.6)
     end
@@ -112,8 +113,9 @@ function BW.OnBagButtonClick(_, mouse)
         return
     end
     -- Inside the button's OnClick: a real hardware event, which is what deleting needs.
-    -- Ctrl held means "don't ask me", read at the moment of the click.
-    BW.ReportPlan(true, IsControlKeyDown())
+    -- The skip modifier held means "don't ask me", read at the moment of the click. Ctrl by
+    -- default; BW.db.skipModifier.
+    BW.ReportPlan(true, BW.ModifierHeld("skip"))
 end
 local OnClick = BW.OnBagButtonClick
 
@@ -164,7 +166,7 @@ local function Anchor(host)
 end
 
 --- The tooltip is the promise: it says what the next click does. So when the plan changes under a
---- resting cursor - which is exactly what a click, a Ctrl-click or the keybind does - it has to be
+--- resting cursor - which is exactly what a click or a modifier-click does - it has to be
 --- rebuilt where it stands rather than waiting for the mouse to leave and come back.
 local function RedrawTooltip()
     if not (button and GameTooltip and GameTooltip.IsOwned) then return end
@@ -216,7 +218,7 @@ function BW.UpdateButton()
     button:SetAlpha(dim)
     button:Show()
     -- The plan can change while the mouse sits on the button (a bag update, or the click itself),
-    -- and the keybind changes it without the mouse being anywhere near. Both the tooltip and the
+    -- and a bag update changes it without the mouse being anywhere near. Both the tooltip and the
     -- red slot in the bags follow it at once.
     if button:IsMouseOver() or (GameTooltip and GameTooltip.IsOwned and GameTooltip:IsOwned(button)) then
         BW.ShowHighlight()

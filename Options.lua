@@ -32,11 +32,13 @@ local HELP = {
         .. "reagents, anything that cannot be sold, or anything better than green. When a check "
         .. "cannot be made, the item is kept." },
 
+    -- %s is the scrap modifier, which is a setting - see HelpNow below. A help block that names a
+    -- key the settings above it can change is the one piece of prose guaranteed to go wrong.
     { "Using it",
         "Open your bags: the button sits next to Blizzard's sort button. Hold Ctrl to skip the "
         .. "question on things that would ask. Right-click it to protect what it was about to "
-        .. "delete. There is a keybind too, under BagWarden.\n\n"
-        .. "Alt-click any stack up to green and the next merchant buys that one. Alt-click again "
+        .. "delete.\n\n"
+        .. "%s-click any stack up to green and the next merchant buys that one. %s-click again "
         .. "to sell it every time." },
 
     { "Good to know",
@@ -44,6 +46,18 @@ local HELP = {
         .. "my bags\" button and never will be. Selling is different: it can be undone from the "
         .. "merchant's buyback list until you walk away." },
 }
+
+--- HELP with the configurable key filled in, rebuilt on each Refresh rather than at load.
+--- A copy, so the template keeps its %s and a second call does not format an already-formatted
+--- string - which would silently drop the key and leave the sentence a word short.
+local function HelpNow()
+    local key = BW.ModifierLabel("scrap")
+    local out = {}
+    for i, section in ipairs(HELP) do
+        out[i] = { section[1], section[2]:find("%%s") and section[2]:format(key, key) or section[2] }
+    end
+    return out
+end
 
 -- The page is hosted in the YippYapp window, which decides how wide it is, so every block of text
 -- is kept and re-widthed when the page is resized.
@@ -141,12 +155,15 @@ function BW.RegisterOptions()
         -- No width is set on purpose: a width plus SetWordWrap(false) ellipsises, and a setting whose
         -- name is cut off is worse than one that runs a little wide. The labels are written short
         -- enough to stop before CONTROL_X.
+        -- `tip` may be a function, for a tooltip whose words depend on a setting. Built once and
+        -- read at hover, a tooltip that names a configurable key is stale from the moment the key
+        -- changes - and this page can change one of those keys itself, two rows further down.
         if tip then
             r:EnableMouse(true)
             r:SetScript("OnEnter", function(self)
                 GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                 GameTooltip:SetText(text, 1, 1, 1)
-                GameTooltip:AddLine(tip, 0.8, 0.8, 0.8, true)
+                GameTooltip:AddLine(type(tip) == "function" and tip() or tip, 0.8, 0.8, 0.8, true)
                 GameTooltip:Show()
             end)
             r:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -163,14 +180,52 @@ function BW.RegisterOptions()
         return control
     end
 
-    local function Toggle(text, tip, onClick)
-        local row = Row(text, tip)
+    --- One checkbox with its label to the RIGHT of it, placed at an x inside a row.
+    ---
+    --- Not at CONTROL_X like a slider or a picker. A checkbox is 24 pixels wide, so a label on the
+    --- left and the box out at 240 leaves a gap the size of the label and then the whole right half
+    --- of the page empty - a full-width row spent on one tick. Beside its label it takes about half
+    --- a row, which is what lets Checks below put two of them in one.
+    local function InlineCheck(row, x, text, tip, onClick)
         local cb = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
         cb:SetSize(24, 24)
-        Place(cb, row)
+        cb:SetPoint("LEFT", row, "LEFT", x - 4, 0)
+        local label = row:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        label:SetPoint("LEFT", cb, "RIGHT", 2, 0)
+        label:SetJustifyH("LEFT")
+        label:SetWordWrap(false)
+        label:SetText(text)
         cb:SetScript("OnClick", function(self) onClick(self:GetChecked() and true or false) end)
-        row.check = cb
-        return row
+        -- The tooltip hangs off the CHECKBOX, not the row: with two per row, a row-wide tooltip
+        -- could only ever describe one of them.
+        if tip then
+            cb:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetText(text, 1, 1, 1)
+                GameTooltip:AddLine(type(tip) == "function" and tip() or tip, 0.8, 0.8, 0.8, true)
+                GameTooltip:Show()
+            end)
+            cb:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        end
+        return { check = cb, label = label, control = cb }
+    end
+
+    --- One row, one or two checkboxes. Each spec is { text, tip, onClick }.
+    --- Returns the handles in the order given, so Refresh reads them the same either way.
+    local function Checks(a, b)
+        local row = Row("", nil)
+        -- Row() builds its own label for the single-control layout; with the checks carrying their
+        -- own, that one is empty and must not take the mouse off them.
+        row:EnableMouse(false)
+        local left = InlineCheck(row, LEFT + 4, a[1], a[2], a[3])
+        local right = b and InlineCheck(row, CONTROL_X + 4, b[1], b[2], b[3])
+        return left, right
+    end
+
+    --- A checkbox on its own row, for the few whose label will not fit beside a neighbour.
+    local function Toggle(text, tip, onClick)
+        local left = Checks({ text, tip, onClick })
+        return left
     end
 
     --- A slider with its number beside it. Built by hand because OptionsSliderTemplate is deprecated
@@ -234,6 +289,77 @@ function BW.RegisterOptions()
         return row
     end
 
+    --- A modifier picker: click it, then click again holding the keys you want.
+    ---
+    --- Not a list of choices, because there is no list - any combination of Ctrl, Shift and Alt is
+    --- a valid gesture, and a button that steps through six of them makes the seventh impossible
+    --- while taking up to six clicks to reach the one you wanted. Reading what is held means every
+    --- combination is available by doing the thing you are about to do anyway, and "custom" stops
+    --- being a feature.
+    ---
+    --- Two clicks rather than a keyboard capture: a modifier is held, not pressed, so there is no
+    --- keypress to catch. OnKeyDown would also need the frame to take keyboard focus, which on a
+    --- page inside somebody else's window is a good way to eat their Escape.
+    local function KeyPick(text, tip, get, set)
+        local row = Row(text, tip)
+        local b = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+        b:SetSize(160, 22)
+        Place(b, row)
+        local listening = false
+
+        row.Sync = function()
+            if listening then
+                b:SetText("hold keys, click")
+            else
+                local label = get()
+                b:SetText((label ~= "" and label) or "none")
+            end
+        end
+
+        b:SetScript("OnClick", function()
+            if not listening then
+                listening = true
+                row.Sync()
+                return
+            end
+            listening = false
+            local value = BW.ModifierFrom(IsControlKeyDown(), IsShiftKeyDown(), IsAltKeyDown())
+            -- No keys held is a cancel, not a setting: a gesture with no modifier would fire on
+            -- every ordinary click in your bags, which is the one outcome nobody is asking for.
+            if value then set(value) end
+            row.Sync()
+        end)
+        -- Clicking elsewhere on the page should not leave the button waiting for ever.
+        b:SetScript("OnHide", function() listening = false end)
+        row.button = b
+        return row
+    end
+
+    --- A button that opens one of the four lists, with its count on the face of it.
+    --- The count is the part that matters: it answers "is there anything in there" without opening
+    --- anything, which is what the inline lists were really being asked for. `spec()` is called at
+    --- click time so the rows are built from the bags as they are then, not as they were when the
+    --- page was drawn.
+    local listButtons = {}
+    local function ListButton(text, count, spec)
+        local row = Row("", nil)
+        row:EnableMouse(false)
+        local b = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+        b:SetSize(260, 22)
+        b:SetPoint("LEFT", row, "LEFT", LEFT + 4, 0)
+        b:SetScript("OnClick", function() BW.OpenList(spec()) end)
+        row.Sync = function()
+            local n = count()
+            b:SetText(n > 0 and ("%s  (%d)"):format(text, n) or text)
+            -- Dim rather than hidden when empty: a button that comes and goes is harder to find
+            -- than one that is simply unlit, and "nothing here" is still an answer worth opening.
+            b:SetEnabled(true)
+        end
+        row.button = b
+        listButtons[#listButtons + 1] = row
+        return row
+    end
+
     --- A radio group, one row each. The label carries the choice, so these rows have the radio on
     --- the LEFT of their text, not out at CONTROL_X: a list of alternatives reads as a list.
     local function Radios(choices, get, set)
@@ -265,19 +391,38 @@ function BW.RegisterOptions()
     Para("Free one bag slot per click - the least valuable junk stack you carry, named in the "
         .. "tooltip before you click it.")
 
-    -- Whether BagWarden has an icon at all. This used to live on the shared YippYapp page, next to
-    -- a "group the buttons" toggle; grouping is fixed on now, so the only question left is this one,
-    -- and it belongs to the addon it is about. Near the top because someone hunting for it is
-    -- looking for a way to hide an icon, not reading the page through.
-    local minimapRow
+    -- Two settings that had a heading and a full-width row each, for one checkbox each: where
+    -- BagWarden puts itself. They are the same question asked about two places, so they share a
+    -- heading and a row. The minimap one is the library's rather than ours, which is why it is
+    -- conditional - and why it has to look exactly like one of ours.
+    Section("Where it shows up")
+    local minimapRow, search
+    local MINIMAP = { "Minimap row",
+        "The YippYapp addons share one minimap button that opens a small row of icons. This is "
+        .. "whether BagWarden is one of them. The addon works exactly the same either way - its "
+        .. "icon only opens these settings - and you can always get here with /bagw.",
+        function(on) LIB.SetMinimapButtonShown("BagWarden", on) end }
+    local SEARCH = { "Shrink the bag search box",
+        "In the combined bag window Blizzard's search box takes up most of the top row. This "
+        .. "shrinks it and moves it to the right, next to the sort button, which leaves the title "
+        .. "its space. The separate bags aren't crowded, so nothing changes there.",
+        function(on) BW.db.smallSearch = on BW.Refresh() end }
     if LIB.SetMinimapButtonShown and LIB.IsMinimapButtonShown then
-        Section("BagWarden's icon")
-        minimapRow = Toggle("Show BagWarden in the minimap row",
-            "The YippYapp addons share one minimap button that opens a small row of icons. This is "
-            .. "whether BagWarden is one of them. The addon works exactly the same either way - its "
-            .. "icon only opens these settings - and you can always get here with /bagw.",
-            function(on) LIB.SetMinimapButtonShown("BagWarden", on) end)
+        minimapRow, search = Checks(MINIMAP, SEARCH)
+    else
+        -- No minimap support in this library: the search box moves over to the left on its own,
+        -- rather than leaving a hole where the other checkbox was.
+        search = Checks(SEARCH)
     end
+    -- In this section because it is about what shows up, and this one is about what shows up on
+    -- this page. Off by default: it is the longest thing here and the page is long enough.
+    local helpOn = Checks({ "Explain how it works, at the foot of this page",
+        "Three short sections at the bottom: what BagWarden does, how to use it, and what the game "
+        .. "will not let it do. Off by default, because the page is long enough without them.",
+        function(on)
+            BW.db.showHelp = on
+            if panel.OnRefresh then panel.OnRefresh() end
+        end })
 
     Section("At a merchant")
     local sell = Toggle("Sell all grey items automatically",
@@ -287,37 +432,71 @@ function BW.RegisterOptions()
         .. "alone; one you put on the scrap list by hand is sold, because that list is about what "
         .. "gets destroyed, not what gets sold.",
         function(on) BW.db.sellGreys = on end)
-    Para("Alt-click any stack up to green in your bags: the next merchant buys that one, then "
-        .. "forgets it. Alt-click again to sell it every time, and once more to take it off.", -12)
-    local scrapList = Para("", -10)
-    local clearScrap = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    clearScrap:SetSize(160, 22)
-    clearScrap:SetText("Empty the scrap list")
-    clearScrap:SetPoint("TOPLEFT", scrapList, "BOTTOMLEFT", 0, -8)
-    clearScrap:SetScript("OnClick", function()
-        wipe(BW.db.scrap or {})
-        BW.Refresh()
-        if panel.OnRefresh then panel.OnRefresh() end
-    end)
-    anchor = clearScrap
+    -- Named from the setting below, and re-set in Refresh, which runs on every OnShow and after
+    -- the setting changes. A paragraph that says "Alt" to somebody who has chosen Ctrl-Alt is the
+    -- page contradicting itself about its own setting two rows down.
+    local scrapHow = Para("", -12)
+    local function ScrapHowText()
+        local key = BW.ModifierLabel("scrap")
+        return ("%s-click any stack up to green in your bags: the next merchant buys that one, "
+            .. "then forgets it. %s-click again to sell it every time, and once more to take it "
+            .. "off."):format(key, key)
+    end
 
-    Section("The bag button")
-    local search = Toggle("Make the bag search box smaller",
-        "In the combined bag window Blizzard's search box takes up most of the top row. This shrinks it "
-        .. "and moves it to the right, next to the sort button, which leaves the title its space. The "
-        .. "separate bags aren't crowded, so nothing changes there.",
-        function(on) BW.db.smallSearch = on BW.Refresh() end)
+    local scrapButton = ListButton("Scrap list", function()
+        local n = 0
+        for _ in pairs(BW.ScrapStore() or {}) do n = n + 1 end
+        return n
+    end, function()
+        return {
+            title = "Scrap list",
+            empty = "Nothing on the scrap list yet. Alt-click a stack in your bags to add one.",
+            rows = function()
+                local out = {}
+                for itemID, how in pairs(BW.ScrapStore() or {}) do
+                    out[#out + 1] = {
+                        itemID = itemID,
+                        suffix = (how == "once") and "  |cff808080(once)|r" or "",
+                        sort = (C_Item.GetItemNameByID(itemID) or ("item " .. itemID)),
+                        action = function()
+                            BW.SetScrap(itemID, false)
+                            BW.Refresh()
+                            if panel.OnRefresh then panel.OnRefresh() end
+                        end,
+                    }
+                end
+                table.sort(out, function(a, b) return a.sort < b.sort end)
+                return out
+            end,
+            actionText = "Empty the list",
+            action = function()
+                wipe(BW.ScrapStore() or {})
+                BW.Refresh()
+                if panel.OnRefresh then panel.OnRefresh() end
+            end,
+        }
+    end)
+
+    -- "The bag button" was a heading over one checkbox about the search box, which is not the bag
+    -- button at all. It is up under "Where it shows up" now, beside the minimap one.
 
     -- The on-screen row. Everything here is layout except the first toggle, which is also the only
     -- setting on this page that costs anything: with the row on, the bags are rescanned on every bag
     -- update instead of only while a bag window is open (see BW.Refresh).
     Section("The on-screen row")
     local barOn = Toggle("Show a row of icons on screen",
-        "The next few stacks BagWarden would delete, cheapest first, without opening your bags. "
-        .. "Ctrl-click an icon to act on it, right-click one to protect it, and drag the row to move "
-        .. "it. An amber edge means it will ask before it goes, however you click it.\n\n"
-        .. "This is the only setting here that costs anything: BagWarden then rescans your bags as "
-        .. "they change even while they are shut, because something on screen depends on it.",
+        -- The row's gesture is described HERE and nowhere else on the page: the paragraph that
+        -- used to say it was dropped when the page was cut. A function, not a string, so it is
+        -- built at hover and names whatever the key is by then.
+        function()
+            return ("The next few stacks BagWarden would delete, cheapest first, without opening "
+                .. "your bags. %s-click an icon to act on it, right-click one to protect it, and "
+                .. "drag the row to move it. An amber edge means it will ask before it goes, "
+                .. "however you click it.\n\n"
+                .. "This is the only setting here that costs anything: BagWarden then rescans your "
+                .. "bags as they change even while they are shut, because something on screen "
+                .. "depends on it."):format(BW.ModifierLabel("row"))
+        end,
         function(on)
             BW.db.barEnabled = on
             BW.ApplyBarSettings()
@@ -344,21 +523,67 @@ function BW.RegisterOptions()
         { value = "LEFT", label = "Left" }, { value = "UP", label = "Up" },
     }, function() return BW.db.barDirection or "RIGHT" end,
        function(v) BW.db.barDirection = v BW.ApplyBarSettings() end)
-    local barCombat = Toggle("Hide it in combat",
-        "Deleting is refused in combat anyway, so the icons can only be clutter over your action bars.",
-        function(on) BW.db.barHideInCombat = on BW.ApplyBarSettings() end)
-    local barLock = Toggle("Lock it where it is",
-        "Stops the row being dragged once it is where you want it.",
-        function(on) BW.db.barLocked = on end)
-    local barFreeLine = Toggle("Show how many slots are free",
-        "A line above the row: grey normally, amber when you are running low, red when the bags are "
-        .. "full. \"Running low\" means the threshold above, or five slots when that is set to always "
-        .. "show. It also keeps the row on screen when your bags are full and there is nothing "
-        .. "BagWarden can free - which is exactly when you want telling.",
-        function(on) BW.db.barShowFree = on BW.ApplyBarSettings() end)
-    local barPrice = Toggle("Show the price under each icon",
-        "What that stack fetches at a vendor, under the icon as well as in its tooltip.",
-        function(on) BW.db.barShowPrice = on BW.ApplyBarSettings() end)
+    -- Four toggles, two rows. Each pair is two settings about the same thing, so reading across is
+    -- as natural as reading down.
+    local barCombat, barLock = Checks(
+        { "Hide it in combat",
+          "Deleting is refused in combat anyway, so the icons can only be clutter over your "
+          .. "action bars.",
+          function(on) BW.db.barHideInCombat = on BW.ApplyBarSettings() end },
+        { "Lock it in place",
+          "Stops the row being dragged once it is where you want it.",
+          function(on) BW.db.barLocked = on end })
+    local barFreeLine, barPrice = Checks(
+        { "Show free slots",
+          "A line above the row: grey normally, amber when you are running low, red when the bags "
+          .. "are full. \"Running low\" means the threshold above, or five slots when that is set "
+          .. "to always show. It also keeps the row on screen when your bags are full and there is "
+          .. "nothing BagWarden can free - which is exactly when you want telling.",
+          function(on) BW.db.barShowFree = on BW.ApplyBarSettings() end },
+        { "Show each price",
+          "What that stack fetches at a vendor, under the icon as well as in its tooltip.",
+          function(on) BW.db.barShowPrice = on BW.ApplyBarSettings() end })
+
+    -- Both click gestures in one place, which is where somebody looking for them will look. They
+    -- used to sit in the two sections they each belong to, which is defensible and useless: you do
+    -- not go hunting for "the thing I click in my bags" under "At a merchant".
+    Section("Clicks and keys")
+    local scrapMod = KeyPick("Mark scrap in your bags", function()
+            return "Hold these and click a stack in your bags to mark it as scrap. Alt by "
+                .. "default.\n\nClick the button, then hold the keys you want and click it again.\n\n"
+                .. "Ctrl and Shift on their own already do something to an item in a bag - try it "
+                .. "on, split the stack - and BagWarden cannot suppress the client's own click, so "
+                .. "both would happen. A combination collides with nothing."
+        end,
+        function() return BW.ModifierLabel("scrap") end,
+        function(v)
+            BW.db.scrapModifier = v
+            if panel.OnRefresh then panel.OnRefresh() end
+        end)
+    local rowMod = KeyPick("Act on a row icon", function()
+            return "Hold these and click one of the on-screen row's icons to act on it. Ctrl by "
+                .. "default.\n\nA plain click never acts, whichever you pick: the row sits on the "
+                .. "world, where a misclick costs an item."
+        end,
+        function() return BW.ModifierLabel("row") end,
+        function(v)
+            BW.db.rowModifier = v
+            if panel.OnRefresh then panel.OnRefresh() end
+        end)
+    local skipMod = KeyPick("Delete without being asked", function()
+            return "Hold these as you click the bag button to skip the confirm popup on anything "
+                .. "that would ask. Ctrl by default.\n\n"
+                .. "Its own setting rather than one of the two above, because it does a different "
+                .. "job: these keys mean \"don't ask me\", not \"act\". It never skips a "
+                .. "protection, only the question - and the two things that always ask whatever "
+                .. "you hold still always ask."
+        end,
+        function() return BW.ModifierLabel("skip") end,
+        function(v)
+            BW.db.skipModifier = v
+            if panel.OnRefresh then panel.OnRefresh() end
+        end)
+
 
     -- How chatty the confirm popup is. Green and better can never be deleted, so the choice only
     -- covers grey and white.
@@ -405,122 +630,83 @@ function BW.RegisterOptions()
     -- Said plainly, because the honest answer depends on another addon being there.
     local reagentMineNote = Para("", -6)
 
-    local protectedList = Para("", -12)
-    local ignoreTitle = Para("", -12)
+    -- The other three lists, as buttons. The never-delete one used to be a frame per item built
+    -- into the page, and the log up to twenty lines of text, and Refresh had to re-anchor the
+    -- heading below however many rows there happened to be. All of that is the window's job now.
+    local protectedButton = ListButton("Protected in your bags right now",
+        function() return #BW.Protected() end,
+        function()
+            return {
+                title = "Protected right now",
+                empty = "Nothing in your bags needs protecting right now.",
+                rows = function() return BW.Protected() end,
+            }
+        end)
 
-    -- Your own never-delete list: one row per item, each removable.
-    local rows, rowPool = {}, CreateFrame("Frame", nil, f)
-    rowPool:SetSize(1, 1)
-    rowPool:SetPoint("TOPLEFT", ignoreTitle, "BOTTOMLEFT", 0, -4)
-
-    local function IgnoreRow(index)
-        local row = rows[index]
-        if row then return row end
-        row = CreateFrame("Frame", nil, f)
-        row:SetSize(560, 20)
-        row:SetPoint("TOPLEFT", rowPool, "TOPLEFT", INDENT, -(index - 1) * 22)
-        row.label = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-        row.label:SetPoint("LEFT")
-        row.remove = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-        row.remove:SetSize(80, 20)
-        row.remove:SetPoint("LEFT", 240, 0)
-        row.remove:SetText("Remove")
-        rows[index] = row
-        return row
-    end
-
-    local clear = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    clear:SetSize(160, 22)
-    clear:SetText("Empty the list")
-    clear:SetScript("OnClick", function()
-        wipe(BW.db.ignore)
-        BW.Refresh()
-        if panel.OnRefresh then panel.OnRefresh() end
+    local ignoreButton = ListButton("Never delete", function()
+        local n = 0
+        for _ in pairs(BW.db.ignore or {}) do n = n + 1 end
+        return n
+    end, function()
+        return {
+            title = "Never delete",
+            empty = "Nothing on the list. Right-click BagWarden's bag button to add what it was "
+                .. "about to delete.",
+            rows = function()
+                local out = {}
+                -- The value is always `true` (see BW.SetIgnored), so the name comes from the
+                -- item id. An item the client has not cached yet reads as "item 2589", which is
+                -- honest and still removable.
+                for itemID in pairs(BW.db.ignore or {}) do
+                    out[#out + 1] = {
+                        itemID = itemID,
+                        sort = C_Item.GetItemNameByID(itemID) or ("item " .. itemID),
+                        action = function()
+                            BW.SetIgnored(itemID, false)
+                            BW.Refresh()
+                            if panel.OnRefresh then panel.OnRefresh() end
+                        end,
+                    }
+                end
+                table.sort(out, function(a, b) return a.sort < b.sort end)
+                return out
+            end,
+            actionText = "Empty the list",
+            action = function()
+                wipe(BW.db.ignore)
+                BW.Refresh()
+                if panel.OnRefresh then panel.OnRefresh() end
+            end,
+        }
     end)
 
-    -- The audit log: what BagWarden has actually deleted.
-    local h4 = f:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    h4:SetText("Deleted items")
-    -- Section() would anchor this into the chain, and Refresh has to move it below however many
-    -- never-delete rows there are. So it gets the divider by hand; the line follows the heading.
-    local h4Line = f:CreateTexture(nil, "ARTWORK")
-    h4Line:SetAtlas("Options_HorizontalDivider")
-    h4Line:SetHeight(1)
-    h4Line:SetPoint("LEFT", h4, "RIGHT", 8, 0)
-    h4Line:SetPoint("RIGHT", f, "RIGHT", -LEFT, 0)
-    local logNote = Note("Deleted on this account, newest first. The last "
-        .. BW.LOG_MAX .. " are kept, with whether Ctrl was held.")
-    local logList = Note("")
-    local clearLog = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    clearLog:SetSize(160, 22)
-    clearLog:SetText("Clear log")
-    clearLog:SetScript("OnClick", function()
-        wipe(BW.db.log)
-        if panel.OnRefresh then panel.OnRefresh() end
-    end)
+    local logButton = ListButton("Deleted items", function() return #(BW.db.log or {}) end,
+        function()
+            return {
+                title = "Deleted items",
+                empty = "Nothing deleted yet.",
+                rows = function()
+                    local out = {}
+                    for _, entry in ipairs(BW.db.log or {}) do
+                        out[#out + 1] = { text = ("%s x%d - %s  |cff808080%s%s|r"):format(
+                            entry.link or entry.name or "?", entry.count or 1,
+                            BW.Coin(entry.value or 0), date("%d.%m %H:%M", entry.when or 0),
+                            (entry.ctrl and (" - " .. BW.ModifierLabel("skip") .. "-click") or "")
+                            .. (entry.unlocked and (" - " .. entry.unlocked) or "")) }
+                    end
+                    return out
+                end,
+                actionText = "Clear the log",
+                action = function()
+                    wipe(BW.db.log)
+                    if panel.OnRefresh then panel.OnRefresh() end
+                end,
+            }
+        end)
 
     -- The launcher bar is gone, and LIB.LauncherOptions with it. What it used to offer that still
     -- means something is "should this addon have an icon at all", which is now the minimap toggle
     -- near the top of this page.
-
-    --- Group everything in the bags that is kept, by reason.
-    local function ProtectedText()
-        local items = BW.ScanBags()
-        local groups, order = {}, {}
-        -- One line per ITEM, not per stack: two stacks of Rough Weightstone are one entry.
-        local listed = {}
-        for _, item in ipairs(items) do
-            local strength, reason = BW.KeepReason(item)
-            if strength and not listed[item.itemID] then
-                listed[item.itemID] = true
-                reason = reason or "kept"
-                if not groups[reason] then groups[reason] = {}; order[#order + 1] = reason end
-                local names = groups[reason]
-                names[#names + 1] = item.link or item.name or "?"
-            end
-        end
-        if #order == 0 then return "Nothing in your bags needs protecting right now." end
-        table.sort(order)
-        local lines = {}
-        for _, reason in ipairs(order) do
-            table.sort(groups[reason])
-            lines[#lines + 1] = "|cffffd100" .. reason .. ":|r " .. table.concat(groups[reason], ", ")
-        end
-        return table.concat(lines, "\n")
-    end
-
-    local function LogText()
-        local log = BW.db.log or {}
-        if #log == 0 then return "Nothing deleted yet." end
-        local lines = {}
-        for i = 1, math.min(20, #log) do
-            local entry = log[i]
-            lines[#lines + 1] = string.format("%s x%d - %s  |cff808080%s%s|r",
-                entry.link or entry.name or "?", entry.count or 1,
-                BW.Coin(entry.value or 0), date("%d.%m %H:%M", entry.when or 0),
-                (entry.ctrl and " - Ctrl-click" or "") .. (entry.unlocked and (" - " .. entry.unlocked) or ""))
-        end
-        if #log > 20 then lines[#lines + 1] = string.format("|cff808080...and %d more|r", #log - 20) end
-        return table.concat(lines, "\n")
-    end
-
-    --- The scrap list, said as a sentence rather than a table: it is usually a handful of items, and
-    --- the only thing you do to one is Alt-click it again in your bags.
-    local function ScrapText()
-        local names = {}
-        for itemID in pairs(BW.db.scrap or {}) do
-            local name = C_Item.GetItemNameByID(itemID) or ("item " .. itemID)
-            -- A one-shot is a different promise from a standing rule, and the list is the one place
-            -- you can see the whole thing at once - so it has to say which each one is. Sorting the
-            -- finished strings keeps the suffix with its name.
-            names[#names + 1] = BW.ScrapOnce(itemID) and (name .. " |cff808080(once)|r") or name
-        end
-        if #names == 0 then
-            return "Nothing on the scrap list yet."
-        end
-        table.sort(names)
-        return "|cffffd100Scrap:|r " .. table.concat(names, ", ")
-    end
 
     local function Refresh()
         if not BW.db then return end
@@ -528,8 +714,9 @@ function BW.RegisterOptions()
         if minimapRow then
             minimapRow.check:SetChecked(LIB.IsMinimapButtonShown("BagWarden") ~= false)
         end
-        scrapList:SetText(ScrapText())
-        clearScrap:SetShown(next(BW.db.scrap or {}) ~= nil)
+        -- Every list button, in one loop. Four lists that each refreshed themselves in their
+        -- own two lines here is how the old inline versions drifted apart.
+        for _, row in ipairs(listButtons) do row.Sync() end
         sell.check:SetChecked(BW.db.sellGreys)
         search.check:SetChecked(BW.db.smallSearch)
         barOn.check:SetChecked(BW.db.barEnabled)
@@ -542,6 +729,12 @@ function BW.RegisterOptions()
         barSize.Sync()
         barFree.Sync()
         barDir.Sync()
+        rowMod.Sync()
+        scrapMod.Sync()
+        skipMod.Sync()
+        helpOn.check:SetChecked(BW.db.showHelp)
+        -- The one piece of prose on this page that names a key the page itself can change.
+        scrapHow:SetText(ScrapHowText())
         -- The row's own controls mean nothing while the row is off, and a page full of live-looking
         -- sliders that change nothing is worse than a page that says so.
         --
@@ -562,6 +755,8 @@ function BW.RegisterOptions()
                 control:Disable()
             end
         end
+        -- rowMod is NOT here any more: it has moved to "Clicks and keys", and greying out a
+        -- control in one section because of a toggle in another is a puzzle, not a hint.
         for _, row in ipairs({ barCount, barSize, barFree, barDir, barCombat, barLock,
                                barFreeLine, barPrice }) do
             SetLit(row.control, rowOn)
@@ -581,51 +776,19 @@ function BW.RegisterOptions()
             askButtons[index]:SetChecked((BW.db.askFrom or 2) == choice.value)
         end
         green.check:SetChecked(BW.db.allowGreen)
-        protectedList:SetText(ProtectedText())
 
-        -- The never-delete rows.
-        local ids = {}
-        for itemID in pairs(BW.db.ignore) do ids[#ids + 1] = itemID end
-        table.sort(ids, function(a, b)
-            return (C_Item.GetItemNameByID(a) or tostring(a)) < (C_Item.GetItemNameByID(b) or tostring(b))
-        end)
-        ignoreTitle:SetText(#ids > 0 and "Your never-delete list:" or
-            "Your never-delete list is empty. Right-click the bag button to add what it was about to delete.")
-        for _, row in ipairs(rows) do row:Hide() end
-        for index, itemID in ipairs(ids) do
-            local row = IgnoreRow(index)
-            row.label:SetText(C_Item.GetItemNameByID(itemID) or ("item " .. itemID))
-            row.remove:SetScript("OnClick", function()
-                BW.SetIgnored(itemID, false)
-                if panel.OnRefresh then panel.OnRefresh() end
-            end)
-            row:Show()
-        end
-
-        -- Everything below the rows moves with them.
-        local listHeight = #ids * 22
-        clear:ClearAllPoints()
-        clear:SetPoint("TOPLEFT", rowPool, "TOPLEFT", INDENT, -listHeight - 6)
-        clear:SetShown(#ids > 0)
-        h4:ClearAllPoints()
-        h4:SetPoint("TOPLEFT", rowPool, "TOPLEFT", 0, -listHeight - (#ids > 0 and 40 or 12))
-        logNote:ClearAllPoints()
-        logNote:SetPoint("TOPLEFT", h4, "BOTTOMLEFT", 0, -8)
-        logList:ClearAllPoints()
-        logList:SetPoint("TOPLEFT", logNote, "BOTTOMLEFT", 0, -8)
-        logList:SetText(LogText())
-        clearLog:ClearAllPoints()
-        clearLog:SetPoint("TOPLEFT", logList, "BOTTOMLEFT", 0, -10)
-        clearLog:SetShown(#(BW.db.log or {}) > 0)
+        -- Nothing here re-anchors anything any more. Everything on this page is now a fixed number
+        -- of rows: the four lists that used to grow downwards and push the log, the Clear buttons
+        -- and the help text about with them are four buttons with a count on them.
 
         -- The help text goes below everything, and AddHelp wants a y in the page's own coordinates
-        -- rather than an anchor - so it is placed from here, where the frames above have just been
-        -- laid out and the never-delete list and the log have their real heights. Calling it again
-        -- replaces the text rather than stacking a second copy, which is what makes that safe.
+        -- rather than an anchor, so it is placed from here - below the last row, which is now
+        -- always the same row. Calling it again replaces the text rather than stacking a second
+        -- copy, which is what makes that safe.
         if LIB.AddHelp then
-            local top, bottom = f:GetTop(), clearLog:GetBottom()
+            local top, bottom = f:GetTop(), logButton:GetBottom()
             if top and bottom then
-                LIB.AddHelp(f, HELP, -(top - bottom) - 28)
+                LIB.AddHelp(f, BW.db.showHelp and HelpNow() or {}, -(top - bottom) - 28)
                 -- The page is a scroll child, so its height is what decides whether the help can be
                 -- scrolled to at all. Grow to fit it; never shrink below the height we registered.
                 local reach = -(LIB.HelpBottom and LIB.HelpBottom(f) or 0) + 24

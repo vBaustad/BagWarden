@@ -1,5 +1,107 @@
 # BagWarden
 
+## Unreleased
+
+- **The last rows of a list drew over the button at the foot of the window.** Sixteen rows of
+  twenty-two pixels need 352, and the space between the window's header and its footer was 322. A
+  frame does not clip its children, so the overflow was drawn rather than hidden and nothing
+  complained. The window is sized from its rows now, so the two cannot disagree again - and
+  because all four lists share one window, all four were affected and all four are fixed.
+- **The list windows have no captions.** Every one of the four opened by repeating its own title
+  back at you in smaller text - "Deleted items" over "what BagWarden has deleted" - and the log's
+  went on to name a number about our saved variables. A list of items does not need describing; it
+  needs showing. The window is shorter for it, and the two facts that were worth a line are said
+  where they are acted on instead.
+- **The deletion log keeps twenty entries instead of two hundred.** It answers "what did it just
+  take from me", and that answer is in the first few lines; the rest was a saved variable growing
+  for nobody. It is also the only one of the four lists with no natural end - your scrap and
+  never-delete lists are exactly as long as you made them.
+
+- **A quiver no longer inflates "N free of M".** The free count has always skipped specialised
+  bags - a quiver is not room for a sword - but the total counted every bag, so the two numbers
+  described different sets. Carry a 20-slot quiver and the tooltip said "4 free of 36" where 16
+  was the only number that meant anything. Both now count the same bags.
+- **BagWarden reads a reagent bag.** Metal bars are flagged as reagents on Forever now, so they
+  can end up in one, and BagWarden only ever walked as far as the four ordinary bag slots.
+  Anything in a sixth container was invisible: never offered for deletion, never sold, and a scrap
+  mark on it would have done nothing at all, silently. The coin on a scrapped slot and the red
+  hover glow reach it too.
+- Its free slots still do not count as room, for the same reason a quiver's do not: a reagent bag
+  only takes reagents. What is *in* one is an ordinary item and can be sold or deleted like any
+  other.
+- Written so it does not depend on Forever having a reagent bag, which nobody has confirmed. Where
+  the client does not know about one, nothing changes.
+
+- **The scrap list belongs to the character now, not the account.** It was shared, and that was
+  wrong three ways over. A one-shot mark is about a stack sitting in your bags, so sharing it
+  meant another character sold theirs. A standing mark says "this character has no use for this",
+  which is a question about professions and level - your tailor wants the Linen Cloth your warrior
+  does not. A shared list also names items the character in front of you has never seen, which
+  is how the list window came to be full of "item 2067".
+- Your existing list is carried over the first time each character logs in, so nobody loses a
+  decision they made. Standing marks only: a one-shot was always about one particular stack, and
+  inheriting somebody else's is the exact mistake being undone here.
+- Settings stay account-wide. It is the list that is a decision about a character, not the
+  choice of which key marks it.
+
+- **The list window was invisible.** It had a hand-rolled backdrop and the settings page read
+  straight through it. Windows here wear Blizzard's own panel frame with Forever's bronze panel art
+  behind it, which is what the other YippYapp windows do, and its strata, dragging, saved position
+  and Escape are the library's rather than four more things of ours to get wrong.
+- **Most rows said "item 2067".** The client answers for an item's name only once it has cached
+  it, and a list can easily name something this character has not seen this session. The window
+  now asks the server for the ones it cannot name and redraws when the answer arrives - and every row carries the item's icon and its name in its quality colour, rather
+  than a bare string.
+- The rows are a list rather than a column of text with buttons beside it: every other one faintly
+  shaded, the icon first, the Remove button small and aligned at the right edge.
+- **The keybinds are gone, and so is Bindings.xml.** BagWarden has three gestures and each is now
+  a modifier plus a click that you choose: mark scrap in your bags, act on an icon in the
+  on-screen row, and skip the question on the bag button. "Free a bag slot" did what the button
+  does, and "mark scrap" existed only because Baganator's buttons were not hooked.
+- **They are hooked now**, so the scrap gesture works inside Baganator the same as in Blizzard's
+  bags. Alt-click is Baganator's own "highlight similar items" and a hook cannot suppress the
+  client's click, so both will happen - which is what the modifier being a setting is for.
+
+- **The four lists open in a window instead of sitting on the settings page.** The scrap list, what
+  is protected in your bags right now, your never-delete list and the deletion log were all drawn
+  into the page, so the page got longer the more you used BagWarden and the settings ended up
+  somewhere in the middle of it. Each is a button now, with its count on the face of it - which
+  answers "is there anything in there" without opening anything.
+- The window scrolls, and a row has its own Remove where that makes sense: one item off the scrap
+  list, one off never-delete. Removing one re-reads the list, so what you see is what is left.
+- **The settings page no longer re-anchors itself.** Every row on it is now a fixed row. The
+  never-delete list used to be a frame per item with the log heading, the Clear buttons and the
+  help text all moved down to make room, recalculated on every refresh.
+- Checkboxes sit beside their labels, two to a row. A checkbox is 24 pixels wide and had a
+  full-width row to itself, with its label at the far left and the box 240 pixels away.
+- "BagWarden's icon" and "The bag button" were a heading over one checkbox each. They are one
+  section, "Where it shows up", with both checkboxes in one row.
+- **All three click gestures are in one section**, "Clicks and keys". They used to sit in the
+  sections they each belong to, which is defensible and useless: nobody looks for "the thing I
+  click in my bags" under "At a merchant".
+- The third one is new to the list: holding Ctrl on the bag button to delete without being asked
+  was the one gesture that could not be changed while the other two could. It is its own setting
+  rather than sharing one, because "don't ask me" is a different instruction from "act".
+- **The modifier picker reads what you are holding.** Click it, hold the keys you want, click
+  again. Any combination of Ctrl, Shift and Alt - including all three, which the old list of six
+  fixed choices made unreachable. "Custom" stopped being a feature because there is no list left.
+- The help block is behind a checkbox, off by default.
+
+- This is where it started: a CurseForge report that the scrap gesture collided with somebody's
+  PowerToys hotkeys. Alt-click in your bags and Ctrl-click on the on-screen row were hardcoded.
+- This started from a CurseForge report that the scrap gesture collided with somebody's PowerToys
+  hotkeys. The keybinds were never the problem - BagWarden has never set a default binding, so
+  there was nothing there to collide with. It was the click gestures that could not move.
+- Every line that names the key now reads it from the setting: the item tooltip, the row's icon
+  tooltip, the chat lines, the settings page and its help text. A tooltip built once at load would
+  have gone on saying "Alt" to somebody who had chosen Ctrl-Alt.
+- They are three settings and not one, because they say three different things: "mark this",
+  "act on this", and "don't ask me". One setting meaning all three would be worse than three that
+  each say what they are.
+- Combinations are worth having because the single keys collide with the client: Shift splits a
+  stack, Ctrl tries the item on, and BagWarden cannot suppress the client's own click. Ctrl-Alt
+  collides with nothing.
+
 ## 0.1.0-beta6
 
 - **Greens can go on the scrap list now**, and the Alt-click has three steps rather than two:

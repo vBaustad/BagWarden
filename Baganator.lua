@@ -2,7 +2,7 @@
 -- Baganator replaces Blizzard's bag windows entirely, so everything of ours that attaches to them
 -- disappears: the bag button, the red slot glow, the Alt-click that marks scrap, and the coin on a
 -- scrapped slot. What keeps working on its own is the part that never needed a bag frame - the
--- on-screen row, the keybind, and selling at a merchant - because those read the containers.
+-- on-screen row and selling at a merchant - because those read the containers.
 --
 -- All of this uses Baganator's own published API, read out of its API/ folder rather than
 -- remembered: RegisterJunkPlugin and RegisterRegion are documented there with their contracts, and
@@ -12,7 +12,7 @@
 -- What is deliberately NOT done: hooking Alt-click on Baganator's item buttons. Alt-click already
 -- means "highlight similar items" there (ItemViewCommon/ItemButton.lua). Firing on top of that
 -- would be us talking over the bag addon the player chose, so inside Baganator the way to mark
--- scrap is the "Mark the item under your cursor as scrap" keybind, which works over any tooltip.
+-- scrap is the same modifier-click as in Blizzard's bags: its buttons are hooked below.
 local ADDON, BW = ...
 
 local ID = "bagwarden_scrap"
@@ -135,6 +135,48 @@ function BW.FindHostedItemButton(bag, slot)
         end
     end
     return nil
+end
+
+--- Hook Baganator's own item buttons for the scrap gesture.
+---
+--- This exists so the scrap KEYBIND could be removed. Until now Blizzard's bags were hooked and
+--- Baganator's were not, so inside Baganator the keybind was the only way to mark anything - which
+--- is a poor answer to give the Baganator user who asked for scrap support in the first place.
+---
+--- The same enumeration the red glow already uses, so if one works the other does. A hook, never
+--- SetScript: these are Baganator's buttons and replacing their handler would break whatever they
+--- do with them. A hook also cannot suppress the default click, which matters here more than in
+--- Blizzard's bags: Alt-click is already Baganator's own "highlight similar items". Both will
+--- happen. That is why the modifier is a setting now - a Baganator user who minds can move ours
+--- off Alt - and why nothing here tries to detect it and guess.
+local function HookHostedClicks()
+    if not (Baganator and Baganator.API and Baganator.API.Skins
+        and Baganator.API.Skins.GetAllFrames) then return end
+    local ok, frames = pcall(Baganator.API.Skins.GetAllFrames)
+    if not ok or type(frames) ~= "table" then return end
+    for _, entry in ipairs(frames) do
+        local b = entry and entry.regionType == "ItemButton" and entry.region
+        -- One hook per button, ever. The flag lives on the button rather than in a table of ours
+        -- so it cannot go stale when Baganator re-pools its buttons.
+        if b and b.GetBagID and b.HookScript and not b.bagWardenScrapHooked then
+            b.bagWardenScrapHooked = true
+            b:HookScript("OnClick", function(self, mouse)
+                if mouse ~= "LeftButton" then return end
+                if not BW.ModifierHeld("scrap") then return end
+                local okIDs, bag, slot = pcall(function() return self:GetBagID(), self:GetID() end)
+                if not (okIDs and bag and slot) then return end
+                local info = C_Container.GetContainerItemInfo(bag, slot)
+                if not (info and info.itemID) then return end
+                BW.ToggleScrap(info.itemID, info.hyperlink, info.quality)
+            end)
+        end
+    end
+end
+
+--- Baganator builds and re-pools its buttons as its windows open, so this runs again each time
+--- rather than once at login.
+function BW.HookBaganatorScrap()
+    pcall(HookHostedClicks)
 end
 
 local function Hook()

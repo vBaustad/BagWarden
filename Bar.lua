@@ -83,10 +83,13 @@ local function IconTooltip(self)
     if entry.reason then
         GameTooltip:AddLine(entry.reason, 0.8, 0.8, 0.8, true)
     end
+    -- Named from the setting, not typed here: this tooltip is the only place the row ever tells
+    -- you which key it wants, so it is the one that must not go stale.
+    local key = BW.ModifierLabel("row")
     if ActionFor(entry) == "ask" then
-        GameTooltip:AddLine("Ctrl-click: asks first", 0.6, 0.85, 1)
+        GameTooltip:AddLine(key .. "-click: asks first", 0.6, 0.85, 1)
     else
-        GameTooltip:AddLine("Ctrl-click: delete", 1, 0.4, 0.4)
+        GameTooltip:AddLine(key .. "-click: delete", 1, 0.4, 0.4)
     end
     GameTooltip:AddLine("Right-click: never delete this", 0.6, 0.85, 1)
     GameTooltip:Show()
@@ -105,13 +108,15 @@ local function IconClick(self, mouse)
 
     -- A plain click does nothing, on purpose. The bag button deletes on a plain click because you
     -- had to open your bags to reach it; these icons sit on the world, where a misclick costs an
-    -- item. Ctrl is how you act here.
-    if not IsControlKeyDown() then return end
+    -- item. A modifier is how you act here - Ctrl by default, BW.db.rowModifier.
+    if not BW.ModifierHeld("row") then return end
 
-    -- And Ctrl here means "act", NOT "skip the question" - that is what it means on the bag button,
-    -- where a plain click already acts. Reading it the other way would make the row the one place
-    -- where a reagent goes without being asked about, which is exactly backwards for the surface
-    -- that is easiest to click by accident.
+    -- And the modifier here means "act", NOT "skip the question" - that is what Ctrl means on the
+    -- bag button, where a plain click already acts. Reading it the other way would make the row the
+    -- one place where a reagent goes without being asked about, which is exactly backwards for the
+    -- surface that is easiest to click by accident. It is also why the button's Ctrl is NOT one of
+    -- the two remappable gestures: the same key meaning two things is survivable, the same SETTING
+    -- meaning two things is not.
     if ActionFor(entry) == "ask" then
         BW.AskThenDelete(entry)
         return

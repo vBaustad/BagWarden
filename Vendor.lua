@@ -48,7 +48,7 @@ function BW.SellPlan(budget)
     local plan = { sell = {}, held = {}, scrapSeen = 0 }
     if not BW.db then plan.blocked = "no saved settings yet" return plan end
     if BW.testing then plan.blocked = "a self test is running" return plan end
-    if not BW.db.sellGreys and not next(BW.db.scrap or {}) then
+    if not BW.db.sellGreys and not next(BW.ScrapStore() or {}) then
         plan.blocked = "\"sell all grey items\" is off and the scrap list is empty"
         return plan
     end
@@ -201,7 +201,11 @@ function BW.SellReport()
     BW.Print("merchant open: %s", (MerchantFrame and MerchantFrame:IsShown()) and "yes" or "no")
     BW.Print("sell greys: %s | scrap list: %d %s | in your bags now: %d",
         (BW.db and BW.db.sellGreys) and "on" or "off",
-        BW.db and BW.db.scrap and (function() local n = 0 for _ in pairs(BW.db.scrap) do n = n + 1 end return n end)() or 0,
+        (function()
+            local n, store = 0, BW.ScrapStore()
+            for _ in pairs(store or {}) do n = n + 1 end
+            return n
+        end)(),
         "item(s)", plan.scrapSeen)
 
     if plan.blocked then

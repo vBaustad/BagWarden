@@ -113,8 +113,8 @@ function BW.DeleteStack(entry, fromHardware, skippedAsk)
         return false
     end
     if fromHardware == false then
-        BW.Print("the game only lets an addon delete inside a real click or keypress.")
-        BW.Print("use the button in your bag window, or bind a key to BagWarden in the keybindings.")
+        BW.Print("the game only lets an addon delete inside a real click.")
+        BW.Print("use BagWarden's button in your bag window.")
         return false
     end
     if not BW.deleteEnabled then
@@ -171,7 +171,7 @@ function BW.DeleteStack(entry, fromHardware, skippedAsk)
     end
 
     BW.Print("deleted %dx %s (%s)%s.", item.count, item.name or "?",
-        BW.Coin(entry.real or entry.value or 0), skippedAsk and " - Ctrl-click, no question asked" or "")
+        BW.Coin(entry.real or entry.value or 0), skippedAsk and (" - " .. BW.ModifierLabel("skip") .. "-click, no question asked") or "")
     -- Leave the deleted stack out and work out the next one NOW: the tooltip under the cursor has
     -- to name what the NEXT click would take, not what this one just took.
     BW.Forget(item)

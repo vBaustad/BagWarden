@@ -197,3 +197,28 @@ function BW.KeepReason(item)
     -- Sellable, no quest, not a reagent: this is what BagWarden is for.
     return nil, nil
 end
+
+--- Everything in the bags that KeepReason would hold on to, one row per ITEM with its reason.
+--- Rows rather than a block of grouped text, because the list window draws rows - and because the
+--- reason belongs beside the item it is about rather than as a heading over a comma list.
+---
+--- One row per item, not per stack: two stacks of Rough Weightstone are one thing you own.
+--- Reads the same KeepReason the bag button reads, so a page that says an item is protected and a
+--- click that deletes it cannot disagree.
+function BW.Protected()
+    local out, listed = {}, {}
+    for _, item in ipairs(BW.ScanBags()) do
+        local strength, reason = BW.KeepReason(item)
+        if strength and not listed[item.itemID] then
+            listed[item.itemID] = true
+            out[#out + 1] = {
+                text = (item.link or item.name or "?")
+                    .. "  |cff808080" .. (reason or "kept") .. "|r",
+                sort = (reason or "kept") .. " " .. (item.name or ""),
+            }
+        end
+    end
+    -- By reason, then by name within it, so everything held for the same cause sits together.
+    table.sort(out, function(a, b) return a.sort < b.sort end)
+    return out
+end

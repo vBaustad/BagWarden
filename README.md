@@ -28,15 +28,14 @@ which food that is.
 Before it deletes a crafting reagent, food, drink, a potion, a bandage or anything a quest has ever
 asked you for, it asks, in a popup that can also put the item on the never-delete list. A setting
 decides whether it also asks by quality: not at all, for white items, or for everything down to
-grey. Hold Ctrl while you click, or while you press the keybind, and it skips the question - that
-skips the asking, never a protection.
+grey. Hold Ctrl while you click and it skips the question - that skips the asking, never a
+protection. Which key that is, is a setting.
 
 ## Only when you ask for it
 
-BagWarden deletes only inside your own click on its button, or your own press of its keybind (set it
-under BagWarden in the keybindings). Never on a timer, never several items at once, never in combat,
-and never from a chat command - `/bagw free` will tell you to use the button instead, because the
-game only allows an addon to delete from a real click. Nor from the minimap button, which could
+BagWarden deletes only inside your own click on its button. Never on a timer, never several items
+at once, never in combat, and never from a chat command - `/bagw free` will tell you to use the
+button instead, because the game only allows an addon to delete from a real click. Nor from the minimap button, which could
 work but is a choice rather than a limit: deleting should be one deliberate click, in the window
 where you can see what is about to go.
 
@@ -48,7 +47,9 @@ deciding, it deletes nothing and tells you why.
 
 **Alt-click** any stack up to green in your bags and it becomes scrap: a gold coin appears in the
 corner of the slot and the next merchant you open buys it. Alt-click it again to take it off. The
-list is account-wide and also shows under "At a merchant" in the settings.
+list belongs to that character and also shows under "At a merchant" in the settings. Your tailor
+wants the Linen Cloth your warrior does not, so each character keeps their own. If Alt is taken by
+something outside the game, the modifier is a setting - Alt, Ctrl, Shift or any pair of them.
 
 **The first Alt-click sells that one stack and then forgets it. Alt-click again and it sells every
 time.** A third takes it off. The chat line and the item's own tooltip both say where you are and
@@ -84,7 +85,8 @@ On by default, and silent until you are down to four free slots. When it appears
 next few stacks it would delete as a row of icons you can put anywhere, so you can clear a slot
 without opening your bags.
 
-- **Ctrl-click** an icon to act on that stack - any of them, not just the first.
+- **Ctrl-click** an icon to act on that stack - any of them, not just the first. This modifier is
+  a setting too, separately from the one in your bags.
 - **Right-click** one to put that item on your never-delete list.
 - **A plain click does nothing.** The bag button deletes on a plain click because you had to open
   your bags to reach it. A row on the world is easy to hit by accident, so acting there takes Ctrl.
@@ -138,4 +140,6 @@ BuffWarden it keeps the sharpening stones and oils you use; with Guildhall it ke
 listed or guildies want. Each addon works fully on its own.
 
 `/bagw` opens the settings, as does BagWarden's minimap button, and `/bagw test` reports what it
-sees in your bags. The settings live in the YippYapp window, under BagWarden.
+sees in your bags. The settings live in the YippYapp window, under BagWarden. The four lists - your
+scrap list, what is protected in your bags right now, your never-delete list and everything
+BagWarden has deleted - each open in their own window from a button that carries the count.

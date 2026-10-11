@@ -25,9 +25,15 @@ end
 --- A bag addon that has replaced Blizzard's windows gets asked second: its buttons answer the same
 --- two questions (GetBagID, GetID), because they inherit the same Blizzard item-button mixin, so
 --- only the way to ENUMERATE them differs - and that part is whoever's addon it is to know.
+-- Built rather than typed, so a sixth bag frame - a reagent bag - gets the glow without anyone
+-- remembering to add it. Scrap.lua builds its own list the same way, for the coin overlay.
+local HOSTS = { "ContainerFrameCombinedBags" }
+for i = 1, (NUM_TOTAL_EQUIPPED_BAG_SLOTS or NUM_BAG_SLOTS or 4) + 1 do
+    HOSTS[#HOSTS + 1] = "ContainerFrame" .. i
+end
+
 local function FindItemButton(bag, slot)
-    for _, name in ipairs({ "ContainerFrameCombinedBags", "ContainerFrame1", "ContainerFrame2",
-        "ContainerFrame3", "ContainerFrame4", "ContainerFrame5" }) do
+    for _, name in ipairs(HOSTS) do
         local frame = _G[name]
         if frame and frame:IsShown() and frame.EnumerateValidItems then
             for _, itemButton in frame:EnumerateValidItems() do

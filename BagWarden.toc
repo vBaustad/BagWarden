@@ -6,6 +6,7 @@
 ## Version: 0.1.0-beta6
 ## IconTexture: Interface\AddOns\BagWarden\Media\icon
 ## SavedVariables: BagWardenDB
+## SavedVariablesPerCharacter: BagWardenCharDB
 ## AddonCompartmentFunc: BagWarden_OnAddonCompartmentClick
 ## AddonCompartmentFuncOnEnter: BagWarden_OnAddonCompartmentEnter
 ## AddonCompartmentFuncOnLeave: BagWarden_OnAddonCompartmentLeave
@@ -37,6 +38,7 @@ Delete.lua
 Vendor.lua
 Scrap.lua
 Baganator.lua
+ListWindow.lua
 Highlight.lua
 Button.lua
 Bar.lua

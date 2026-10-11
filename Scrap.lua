@@ -1,6 +1,6 @@
 -- BagWarden - marking something as scrap.
--- Alt-click any stack in your bags and it joins the scrap list: the next merchant you open buys it,
--- and you never have to decide about that item again.
+-- Hold the scrap modifier (Alt by default, BW.db.scrapModifier) and click any stack in your bags
+-- and it joins the scrap list: the next merchant you open buys it.
 --
 -- How the click is caught, and why it is caught this way:
 -- RXPGuides hooks the global ContainerFrameItemButton_OnModifiedClick for the same job, and guards
@@ -22,8 +22,12 @@ local COMMON = Enum.ItemQuality and Enum.ItemQuality.Common or 1
 local UNCOMMON = Enum.ItemQuality and Enum.ItemQuality.Uncommon or 2
 
 -- Same list Highlight.lua walks, for the same reason: these are the frames that draw bag slots.
-local HOSTS = { "ContainerFrameCombinedBags", "ContainerFrame1", "ContainerFrame2",
-    "ContainerFrame3", "ContainerFrame4", "ContainerFrame5" }
+-- Built rather than typed, so a sixth bag frame - a reagent bag - is covered without anyone
+-- remembering to add it. One more name costs a nil lookup when the frame does not exist.
+local HOSTS = { "ContainerFrameCombinedBags" }
+for i = 1, (NUM_TOTAL_EQUIPPED_BAG_SLOTS or NUM_BAG_SLOTS or 4) + 1 do
+    HOSTS[#HOSTS + 1] = "ContainerFrame" .. i
+end
 
 --- Can this be scrapped at all? Everything up to green.
 ---
@@ -46,8 +50,7 @@ end
 --- `link` and `quality` are what the caller already knows; both are optional and looked up when
 --- missing.
 --- Separate from any click, because there is more than one way to reach it: Alt-click in Blizzard's
---- bags, and the "mark as scrap" keybind over any item tooltip anywhere - including inside a bag
---- addon that has replaced Blizzard's bags entirely.
+--- bags, and the same gesture on Baganator's own buttons, hooked in Baganator.lua.
 ---
 --- Three steps on one gesture, rather than two steps and a modifier. A modifier would be a second
 --- thing to know about and would have to not collide with Shift (split a stack) or Ctrl (try it
@@ -63,7 +66,8 @@ function BW.ToggleScrap(itemID, link, quality)
     if BW.IsScrap(itemID) then
         if BW.ScrapOnce(itemID) then
             BW.SetScrap(itemID, true)
-            BW.Print("%s is scrap every time now - Alt-click again to take it off.", shown)
+            BW.Print("%s is scrap every time now - %s-click again to take it off.", shown,
+                BW.ModifierLabel("scrap"))
         else
             BW.SetScrap(itemID, false)
             BW.Print("%s is no longer scrap.", shown)
@@ -87,38 +91,19 @@ function BW.ToggleScrap(itemID, link, quality)
     -- invisible once the window is shut, so the moment of making one is the moment to say it.
     BW.SetScrap(itemID, "once")
     BW.Print("%s is scrap - the next merchant buys it, then it comes off the list.", shown)
-    BW.Print("Alt-click it again to sell it every time instead.")
+    BW.Print("%s-click it again to sell it every time instead.", BW.ModifierLabel("scrap"))
 end
 
---- Alt-click on one bag slot. Blizzard's bags only: inside Baganator, Alt-click already means
---- "highlight similar items", and firing on top of that would be us talking over the bag addon the
---- player chose. There, the keybind below is the way in.
+--- The gesture on one of Blizzard's bag slots. Baganator's own buttons are hooked separately, in
+--- Baganator.lua, through the enumeration its API gives us.
 local function Toggle(itemButton)
-    if not IsAltKeyDown() then return end
+    if not BW.ModifierHeld("scrap") then return end
     local bag, slot = itemButton:GetBagID(), itemButton:GetID()
     if not (bag and slot) then return end
 
     local info = C_Container.GetContainerItemInfo(bag, slot)
     if not (info and info.itemID) then return end
     BW.ToggleScrap(info.itemID, info.hyperlink, info.quality)
-end
-
---- The item under the cursor, from whatever tooltip is showing it. GameTooltip:GetItem is the one
---- lookup that works the same in Blizzard's bags, in a bag replacement, in the loot window and on a
---- chat link - and it is proven on this client by four installed addons and two of our own.
-function BagWardenMarkScrap()
-    if not (GameTooltip and GameTooltip.GetItem) then return end
-    local ok, _, link = pcall(GameTooltip.GetItem, GameTooltip)
-    if not ok or not link then
-        BW.Print("point at an item first, then press the key.")
-        return
-    end
-    local itemID = C_Item and C_Item.GetItemInfoInstant and C_Item.GetItemInfoInstant(link)
-    if not itemID then
-        BW.Print("couldn't read that item.")
-        return
-    end
-    BW.ToggleScrap(itemID, link)
 end
 
 -- One hook per button, ever. The flag lives on the button rather than in a table of our own so it
@@ -145,6 +130,9 @@ function BW.HookScrapClicks()
             if not ok then BW.Debug("could not walk %s", name) end
         end
     end
+    -- Baganator's buttons too, when it is the bag addon in use. Its windows build and re-pool
+    -- their buttons as they open, same as Blizzard's, so this belongs here rather than at login.
+    if BW.HookBaganatorScrap then BW.HookBaganatorScrap() end
     BW.MarkScrap()
 end
 
@@ -234,18 +222,19 @@ if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and Enum and
             -- A grey line reads as something the game has switched off.
             -- Both lines say where the cycle is AND what the next Alt-click does, because the
             -- two marks look identical in the bags - same coin, same slot.
+            local key = BW.ModifierLabel("scrap")
             if BW.ScrapOnce and BW.ScrapOnce(itemID) then
                 tt:AddLine("|cffc9a227BagWarden|r  |cffffd100scrap - the next merchant buys this one|r")
-                tt:AddLine("|cffc9a227Alt-click in your bags to sell it every time|r")
+                tt:AddLine("|cffc9a227" .. key .. "-click in your bags to sell it every time|r")
             else
                 tt:AddLine("|cffc9a227BagWarden|r  |cffffd100scrap - every merchant buys this|r")
-                tt:AddLine("|cffc9a227Alt-click in your bags to take it off the list|r")
+                tt:AddLine("|cffc9a227" .. key .. "-click in your bags to take it off the list|r")
             end
             return
         end
 
-        -- Alt-click only does anything over a bag slot, so the line has to say WHERE - it shows on
-        -- a merchant's wares and on chat links too, and "Alt-click to sell this" would be a lie
+        -- The gesture only does anything over a bag slot, so the line has to say WHERE - it shows
+        -- on a merchant's wares and on chat links too, and "...-click to sell this" would be a lie
         -- there. Saying "in your bags" makes one sentence that is true everywhere it appears, which
         -- beats the two ways of limiting it to the bags: GameTooltip:GetOwner() is a call nothing
         -- else in the family makes, and tracking the hovered button cannot work - the tooltip is
@@ -257,7 +246,8 @@ if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and Enum and
         local details = BW.ItemInfo(nil, itemID)
         local quality = details and details.quality
         if quality ~= nil and CanScrap(quality) then
-            tt:AddLine("|cffc9a227Alt-click in your bags: sell this one at the next merchant|r")
+            tt:AddLine("|cffc9a227" .. BW.ModifierLabel("scrap")
+                .. "-click in your bags: sell this one at the next merchant|r")
         end
     end)
 end

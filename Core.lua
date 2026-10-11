@@ -24,7 +24,10 @@ local defaults = {
     askFrom = 2,
     allowGreen = false,     -- let green items be deleted at all; they always ask first (Protect.lua)
     ignore = {},            -- [itemID] = true, never delete (right-click the button, or the popup)
-    scrap = {},             -- [itemID] = true, sell this at the next merchant (Alt-click in your bags)
+    -- The scrap list USED to live here, account-wide. It is per character now (BagWardenCharDB,
+    -- below) and this copy survives only as the seed each character imports once. Nothing writes
+    -- to it any more.
+    scrap = {},             -- legacy: imported into a character's own list on their first login
     log = {},               -- what we deleted, newest first: { link, name, count, value, when }
     learned = {},           -- ["item name in lower case"] = "quest title", account-wide, see Quests.lua
     minimap = {},         -- LibDBIcon's own store, filled by LIB.RegisterMinimapButton
@@ -41,6 +44,28 @@ local defaults = {
     barLocked = false,      -- stop it being dragged once it is where you want it
     barShowPrice = false,   -- the price under each icon, as well as in the tooltip
     barShowFree = true,     -- the free-slot line above the row: amber when low, red when full
+
+    -- Which modifier each click gesture wants. Values are keys of BW.MODIFIERS below.
+    -- Defaults are what they have always been, so no existing gesture moves under anyone.
+    scrapModifier = "ALT",  -- + click a bag slot: step round the scrap cycle (Scrap.lua)
+    rowModifier = "CTRL",   -- + click a row icon: act on that stack (Bar.lua)
+    -- Held while you click the bag button: skip the confirm popup. A THIRD
+    -- setting rather than reusing one of the two above, because it does a different job - "don't
+    -- ask me" is not "act" - and one setting that meant both would be worse than three that each
+    -- say what they are. What was wrong was that this one could not be changed at all while the
+    -- other two could.
+    skipModifier = "CTRL",
+
+    -- The help block at the foot of the settings page. OFF: it is 180 words, and the page's own
+    -- problem was its length. Anything that adds to what is on screen starts off.
+    showHelp = false,
+}
+
+-- Per character (BagWardenCharDB). Deliberately small: only what is a decision about THIS
+-- character rather than about how the addon behaves.
+local charDefaults = {
+    scrap = {},     -- [itemID] = "once" (sell the next one, then forget) or true (sell them all)
+    imported = false,   -- has the old account-wide list been carried over for this character yet
 }
 
 local migrations = {
@@ -163,20 +188,124 @@ end
 -- somebody's Linen Cloth because they wanted the gold one afternoon - see CanScrap in Scrap.lua.
 -- `true` is also every value written before "once" existed, so nothing has to be migrated: the
 -- schema stays where it is and old lists keep meaning exactly what they meant.
+-- ---------------------------------------------------------------------------
+-- Click modifiers
+-- ---------------------------------------------------------------------------
+-- A modifier is stored as the set of keys it needs, in one fixed order: "ALT", "CTRL-ALT",
+-- "CTRL-SHIFT-ALT". There is no list of allowed combinations, because there was no reason for one -
+-- a fixed list of six made "custom" a feature that had to be added, when the honest shape is that
+-- every value is custom and the shipped defaults are just two of them.
+--
+-- One place behind both the check and the words. Fifteen strings in four files name the modifier to
+-- the player, and a setting whose label lives apart from its test is a setting that lies the first
+-- time it moves.
+--
+-- Why anyone would change it: the single keys collide with what the CLIENT already does to an item
+-- in a bag - Shift splits a stack or links it in chat, Ctrl tries it on - and our hook cannot
+-- suppress a default click, so both happen. A combination collides with nothing. That is also the
+-- answer for somebody whose Alt is taken by something outside the game entirely.
+local MOD_ORDER = { "CTRL", "SHIFT", "ALT" }
+local MOD_LABEL = { CTRL = "Ctrl", SHIFT = "Shift", ALT = "Alt" }
+local MOD_DOWN = {
+    CTRL = function() return IsControlKeyDown() end,
+    SHIFT = function() return IsShiftKeyDown() end,
+    ALT = function() return IsAltKeyDown() end,
+}
+
+--- The keys a stored value asks for, as a list in MOD_ORDER. Empty when nothing is recognised.
+local function Keys(stored)
+    local out = {}
+    if type(stored) ~= "string" then return out end
+    for _, name in ipairs(MOD_ORDER) do
+        -- Matched as a whole word between the dashes, so "SHIFT" cannot be found inside some
+        -- future "SHIFT-MOUSE" and quietly become a different gesture.
+        if ("-" .. stored:upper() .. "-"):find("-" .. name .. "-", 1, true) then
+            out[#out + 1] = name
+        end
+    end
+    return out
+end
+
+--- Build a stored value from three booleans, in MOD_ORDER. nil when none are held, which is the
+--- caller's signal that there is nothing to save - a gesture with no modifier would fire on every
+--- plain click.
+function BW.ModifierFrom(ctrl, shift, alt)
+    local held = { CTRL = ctrl, SHIFT = shift, ALT = alt }
+    local parts = {}
+    for _, name in ipairs(MOD_ORDER) do
+        if held[name] then parts[#parts + 1] = name end
+    end
+    return (#parts > 0) and table.concat(parts, "-") or nil
+end
+
+--- Which gesture: "scrap" (a bag slot) or "row" (an icon in the on-screen row).
+--- A value we cannot read at all falls back to this gesture's shipped default rather than to
+--- nothing, so a hand-edited file leaves a working gesture instead of a dead one.
+local GESTURE = {
+    scrap = { key = "scrapModifier", default = "ALT" },
+    row = { key = "rowModifier", default = "CTRL" },
+    skip = { key = "skipModifier", default = "CTRL" },
+}
+
+local function Stored(which)
+    local g = GESTURE[which] or GESTURE.scrap
+    local stored = BW.db and BW.db[g.key]
+    if #Keys(stored) > 0 then return stored end
+    return g.default
+end
+
+--- Is this gesture's modifier held right now? Read at the moment of the click, never cached.
+--- Every key it asks for must be down. Extra keys are allowed: holding Ctrl as well as Alt still
+--- counts as Alt, which is how it has always behaved and is the forgiving way round.
+function BW.ModifierHeld(which)
+    local keys = Keys(Stored(which))
+    if #keys == 0 then return false end
+    for _, name in ipairs(keys) do
+        if not MOD_DOWN[name]() then return false end
+    end
+    return true
+end
+
+--- What to call it in a tooltip or a chat line: "Alt", "Ctrl-Alt", "Ctrl-Shift-Alt".
+function BW.ModifierLabel(which)
+    local parts = {}
+    for i, name in ipairs(Keys(Stored(which))) do parts[i] = MOD_LABEL[name] end
+    return table.concat(parts, "-")
+end
+
+--- The scrap list, which is PER CHARACTER.
+---
+--- It was account-wide and that was wrong in three ways. A one-shot mark is about a stack sitting
+--- in front of you - sharing it across characters means another character sells theirs. A standing
+--- mark encodes "this character has no use for this", which is a question about professions and
+--- level, and your tailor wants the Linen Cloth your warrior does not. And an account-wide list
+--- names items this character has never seen, so the client cannot even tell you what they are -
+--- which is why the list window was full of "item 2067".
+---
+--- One accessor, so a move like this one never has to be made in nine places again.
+function BW.ScrapStore()
+    if not BW.cdb then return nil end
+    BW.cdb.scrap = BW.cdb.scrap or {}
+    return BW.cdb.scrap
+end
+
 function BW.IsScrap(itemID)
-    return (itemID ~= nil and BW.db and BW.db.scrap and BW.db.scrap[itemID]) and true or false
+    local store = BW.ScrapStore()
+    return (itemID ~= nil and store and store[itemID]) and true or false
 end
 
 --- Is this mark a one-shot? Only meaningful when IsScrap is true.
 function BW.ScrapOnce(itemID)
-    return itemID ~= nil and BW.db and BW.db.scrap and BW.db.scrap[itemID] == "once" or false
+    local store = BW.ScrapStore()
+    return itemID ~= nil and store and store[itemID] == "once" or false
 end
 
 --- `on` is true for a standing mark, the string "once" for a one-shot, false to take it off.
 function BW.SetScrap(itemID, on)
     if not (itemID and BW.db) then return end
-    BW.db.scrap = BW.db.scrap or {}
-    BW.db.scrap[itemID] = (on == "once" and "once") or (on and true) or nil
+    local store = BW.ScrapStore()
+    if not store then return end
+    store[itemID] = (on == "once" and "once") or (on and true) or nil
     -- The coin on the slot has to appear on the same click that put it there, and Refresh is
     -- debounced - and skipped outright when nothing on screen needs a plan.
     if BW.MarkScrap then BW.MarkScrap() end
@@ -189,7 +318,10 @@ end
 -- ---------------------------------------------------------------------------
 -- The log of what was deleted
 -- ---------------------------------------------------------------------------
-BW.LOG_MAX = 200
+-- Twenty, not two hundred. The log answers "what did it just take from me", and that answer is in
+-- the first few lines; the rest was a saved variable growing for nobody. It is also the only list
+-- here with no natural end - the scrap and never-delete lists are as long as you made them.
+BW.LOG_MAX = 20
 
 --- Remember a deletion, newest first. Account-wide, so the log survives a character switch.
 function BW.LogDeletion(item, value, skippedAsk, unlockedBy)
@@ -285,6 +417,23 @@ f:SetScript("OnEvent", function(_, event, arg1)
         if arg1 ~= ADDON then return end
         BagWardenDB = BagWardenDB or {}
         BW.db = LIB.PrepareDB(BagWardenDB, defaults, migrations, 4)
+
+        -- Per character: the scrap list, and nothing else. Settings stay account-wide, which is
+        -- how the five sibling addons split theirs too.
+        BagWardenCharDB = BagWardenCharDB or {}
+        BW.cdb = LIB.PrepareDB(BagWardenCharDB, charDefaults, nil, 1)
+
+        -- Carried over once, the first time each character logs in after the move. STANDING marks
+        -- only: a one-shot was always about a particular stack in a particular bag, so inheriting
+        -- somebody else's is the exact mistake this change is undoing. Nobody loses a durable
+        -- decision; everybody stops sharing a transient one.
+        if not BW.cdb.imported then
+            BW.cdb.imported = true
+            local store = BW.ScrapStore()
+            for itemID, how in pairs(BagWardenDB.scrap or {}) do
+                if how == true and store[itemID] == nil then store[itemID] = true end
+            end
+        end
     elseif event == "PLAYER_LOGIN" then
         BW.RegisterOptions()
         BW.RegisterMinimap()
@@ -300,6 +449,9 @@ f:SetScript("OnEvent", function(_, event, arg1)
         -- look again, so "still loading" doesn't stick.
         BW.ForgetItemInfo(arg1)
         BW.Refresh()
+        -- An open list window may be showing "item 2067" for this very id, because these lists are
+        -- account-wide and half of what is on them was put there by another character.
+        if BW.RefreshListWindow then BW.RefreshListWindow() end
     elseif event == "QUEST_LOG_UPDATE" or event == "QUEST_ACCEPTED" or event == "QUEST_REMOVED" then
         BW.ScanQuestLog()
         BW.Refresh()
@@ -350,18 +502,16 @@ SlashCmdList.BAGWARDEN = function(msg)
     end
 end
 
--- The keybinding (Bindings.xml). A keypress is a hardware event, so this one CAN delete, unlike
--- /bagw free typed in chat.
-BINDING_HEADER_BAGWARDEN = "BagWarden"
-BINDING_NAME_BAGWARDEN_FREE_SLOT = "Free a bag slot"
--- Works over any item tooltip, anywhere - which is what makes it the way to mark scrap inside a bag
--- addon that has replaced Blizzard's bags and taken Alt-click for itself.
-BINDING_NAME_BAGWARDEN_MARK_SCRAP = "Mark the item under your cursor as scrap"
-
-function BagWardenFreeSlot()
-    -- Ctrl held at the moment of the press skips the question, exactly like a Ctrl-click.
-    BW.ReportPlan(true, IsControlKeyDown())
-end
+-- There are no keybindings any more, and Bindings.xml is gone with them.
+--
+-- BagWarden has three gestures and each is now a click with a modifier you choose: mark scrap in
+-- your bags, act on an icon in the on-screen row, and skip the question on the bag button. A
+-- keybind for "free a bag slot" did the same thing the button does, and one for "mark scrap" was
+-- only ever needed because Baganator's buttons were not hooked - which they are now, so it was
+-- answering a question that no longer gets asked.
+--
+-- (Deleting still needs a hardware event. A click is one; a keypress was one too. What is gone is
+-- the second way in, not the rule - and `/bagw free` typed in chat still cannot delete.)
 
 --- Every icon we own - the minimap button and the addon compartment - opens the settings, whichever
 --- mouse button was used. BagWarden has no window of its own: its UI is the button inside Blizzard's

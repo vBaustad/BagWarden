@@ -1,10 +1,25 @@
 -- BagWarden - reading the bags.
--- One place that turns the four (or five) bags into a plain list of stacks, so the rest of the addon
+-- One place that turns every bag you carry into a plain list of stacks, so the rest of the addon
 -- never talks to C_Container directly.
 local ADDON, BW = ...
 
 local FIRST_BAG = Enum.BagIndex and Enum.BagIndex.Backpack or 0
-local LAST_BAG = FIRST_BAG + (NUM_BAG_SLOTS or 4)
+-- NUM_TOTAL_EQUIPPED_BAG_SLOTS counts the reagent bag; NUM_BAG_SLOTS does not. Preferring the
+-- first means a reagent bag is walked where one exists and nothing changes where the global is
+-- missing - which matters, because whether Forever has a reagent bag at all is unconfirmed. The
+-- same fallback chain ForeverDungeonJournal uses on this client.
+--
+-- An index with no bag in it simply answers 0 slots, so an extra turn of the loop costs one call.
+local LAST_BAG = FIRST_BAG + (NUM_TOTAL_EQUIPPED_BAG_SLOTS or NUM_BAG_SLOTS or 4)
+
+--- Does this container only take one kind of thing - a quiver, an ammo pouch, a reagent bag?
+--- Its free slots are not room for the stack you are holding, so they are not room at all as far
+--- as "how full are my bags" is concerned. The family comes from GetContainerNumFreeSlots's second
+--- return, which costs nothing extra: it is the call we were making anyway.
+local function Specialised(bag)
+    local _, family = C_Container.GetContainerNumFreeSlots(bag)
+    return (family or 0) ~= 0
+end
 
 -- What GetItemInfo told us about an item, kept per itemID: the same query ran once per slot on
 -- every scan before, and none of these fields change while we play.
@@ -82,21 +97,33 @@ function BW.ScanBags()
     return items
 end
 
---- How many empty slots we have, counting only normal bags (a quiver only takes arrows).
+--- How many empty slots we have, counting only normal bags. A quiver only takes arrows and a
+--- reagent bag only takes reagents, so neither is room for the thing in your hand.
+---
+--- Note what this does NOT do: it does not stop BagWarden deleting or selling what is INSIDE one.
+--- An item in a reagent bag is still an item you own and can lose - it just is not free space.
 function BW.FreeSlots()
     local free = 0
     for bag = FIRST_BAG, LAST_BAG do
-        local n, family = C_Container.GetContainerNumFreeSlots(bag)
-        if (family or 0) == 0 then free = free + (n or 0) end
+        if not Specialised(bag) then
+            free = free + (select(1, C_Container.GetContainerNumFreeSlots(bag)) or 0)
+        end
     end
     return free
 end
 
---- Total slots across those same bags.
+--- Total slots across those same bags - and "those same bags" has to mean the same thing it
+--- means in FreeSlots, or the two numbers describe different sets.
+---
+--- They did not. FreeSlots has skipped specialised bags since it was written; this counted every
+--- bag. Carry a 20-slot quiver and the tooltip said "4 free of 36", where 16 was the only number
+--- that meant anything - a bug that needed no reagent bag to happen, and has been there all along.
 function BW.TotalSlots()
     local total = 0
     for bag = FIRST_BAG, LAST_BAG do
-        total = total + (C_Container.GetContainerNumSlots(bag) or 0)
+        if not Specialised(bag) then
+            total = total + (C_Container.GetContainerNumSlots(bag) or 0)
+        end
     end
     return total
 end
