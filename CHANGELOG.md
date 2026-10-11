@@ -1,6 +1,6 @@
 # BagWarden
 
-## Unreleased
+## 0.1.0-beta7
 
 - **The last rows of a list drew over the button at the foot of the window.** Sixteen rows of
   twenty-two pixels need 352, and the space between the window's header and its footer was 322. A
