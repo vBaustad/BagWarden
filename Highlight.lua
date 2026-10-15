@@ -41,6 +41,10 @@ local function FindItemButton(bag, slot)
             end
         end
     end
+    -- A bag addon that tells us about its buttons one at a time (GudaBags) answers from the
+    -- registry; one that only offers a list to walk (Baganator) is scanned.
+    local hosted = BW.HostedButton and BW.HostedButton(bag, slot)
+    if hosted then return hosted end
     if BW.FindHostedItemButton then return BW.FindHostedItemButton(bag, slot) end
     return nil
 end

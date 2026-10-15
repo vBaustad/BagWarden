@@ -1,5 +1,29 @@
 # BagWarden
 
+## 0.1.0-beta8
+
+- **A scrapped item's coin stayed behind on the empty slot** after the stack was sold or moved, in
+  a bag addon's own window. GudaBags tells us about a button when it HAS an item and says plainly
+  that it does not fire for an empty one - so a coin drawn from that callback alone could be put
+  on and never taken off. Bag updates now re-decide the coin on every button a bag addon has told
+  us about, which is the same sweep Blizzard's own bags have always had.
+
+- **The scrap gesture never reached a bag addon's buttons.** Reported against beta7 for Baganator
+  and GudaBags, and it was one fault about timing: buttons were hooked when a bag WINDOW opened,
+  and a bag addon builds its buttons after that moment. We walked an empty list and never looked
+  again, so with Baganator installed nothing was ever hooked. Bag updates re-attach it now, and
+  each window-open tries again on the next frame.
+- **GudaBags is supported.** It publishes `OnItemButtonUpdate`, which fires per button on every
+  item update - so instead of guessing when to look, we are told. The gesture, the coin on a
+  scrapped slot and the red hover glow all work there now.
+- A bag addon that tells us about its buttons one at a time is now a thing BagWarden understands,
+  rather than something only Baganator's list-walking could serve. Buttons register the slot they
+  are drawing as they draw it, and every lookup checks the button still claims that slot - these
+  are pooled, so a stale answer would put the "about to be deleted" glow on the wrong item.
+- `/bagw baganator` says how many of Baganator's item buttons carry the gesture, and how many it
+  offered us. A hook that was never installed and one that is installed and not firing look
+  identical from outside the game.
+
 ## 0.1.0-beta7
 
 - **The last rows of a list drew over the button at the foot of the window.** Sixteen rows of

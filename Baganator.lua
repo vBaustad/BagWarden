@@ -149,17 +149,26 @@ end
 --- Blizzard's bags: Alt-click is already Baganator's own "highlight similar items". Both will
 --- happen. That is why the modifier is a setting now - a Baganator user who minds can move ours
 --- off Alt - and why nothing here tries to detect it and guess.
+-- How many of Baganator's buttons we have hooked, and how many it offered. Counted rather than
+-- assumed, because "the gesture does not work" has no other symptom: a hook that was never
+-- installed and a hook that is installed and not firing look identical from outside the game.
+-- Read with /bagw baganator.
+BW.baganatorHooked, BW.baganatorSeen = 0, 0
+
 local function HookHostedClicks()
     if not (Baganator and Baganator.API and Baganator.API.Skins
         and Baganator.API.Skins.GetAllFrames) then return end
     local ok, frames = pcall(Baganator.API.Skins.GetAllFrames)
     if not ok or type(frames) ~= "table" then return end
+    local seen = 0
     for _, entry in ipairs(frames) do
         local b = entry and entry.regionType == "ItemButton" and entry.region
         -- One hook per button, ever. The flag lives on the button rather than in a table of ours
         -- so it cannot go stale when Baganator re-pools its buttons.
+        if b and b.GetBagID then seen = seen + 1 end
         if b and b.GetBagID and b.HookScript and not b.bagWardenScrapHooked then
             b.bagWardenScrapHooked = true
+            BW.baganatorHooked = BW.baganatorHooked + 1
             b:HookScript("OnClick", function(self, mouse)
                 if mouse ~= "LeftButton" then return end
                 if not BW.ModifierHeld("scrap") then return end
@@ -171,10 +180,12 @@ local function HookHostedClicks()
             end)
         end
     end
+    BW.baganatorSeen = seen
 end
 
 --- Baganator builds and re-pools its buttons as its windows open, so this runs again each time
---- rather than once at login.
+--- rather than once at login - and now on every bag update as well, because "when its windows
+--- open" turned out to be a moment that arrives before the buttons do.
 function BW.HookBaganatorScrap()
     pcall(HookHostedClicks)
 end
@@ -255,6 +266,20 @@ function BW.BaganatorReport()
         BW.Print("  %s %s%s", step.ok and "|cff40ff40yes|r" or "|cffff4040NO |r", step.name,
             step.detail and (" - " .. step.detail) or "")
     end
+
+    -- The scrap gesture, which is the half nobody can see. A hook that was never installed and one
+    -- that is installed and not firing look identical from outside the game, so say which: how
+    -- many item buttons Baganator offered us last time we looked, and how many carry our hook.
+    -- Re-walk first, so this reports now rather than whenever a bag last changed.
+    if BW.HookBaganatorScrap then BW.HookBaganatorScrap() end
+    BW.Print("scrap gesture: %d of Baganator's item buttons hooked, %d offered",
+        BW.baganatorHooked or 0, BW.baganatorSeen or 0)
+    if (BW.baganatorSeen or 0) == 0 then
+        BW.Print("  |cffff4040Baganator is showing us no item buttons|r - open your bags first, "
+            .. "then run this again.")
+    end
+    BW.Print("  the gesture is %s-click; Baganator uses Alt-click itself, so both will happen.",
+        BW.ModifierLabel and BW.ModifierLabel("scrap") or "Alt")
 
     -- State now, rather than at login: a button that was placed and later hidden looks the same in
     -- the window as one that was never placed at all.

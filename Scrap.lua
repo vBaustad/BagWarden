@@ -164,6 +164,57 @@ local function Coin(itemButton)
     return coin
 end
 
+--- Show or hide the coin on one button, for a bag addon that tells us about its buttons one at
+--- a time. The texture is built on first use, so a slot that never needs one never gets one.
+function BW.ScrapCoin(itemButton, on)
+    if on then
+        Coin(itemButton):Show()
+    elseif itemButton.bagWardenCoin then
+        itemButton.bagWardenCoin:Hide()
+    end
+end
+
+-- Buttons a bag addon has told us about, by the slot they were drawing at the time. Filled by
+-- GudaBags.lua through its per-button callback; read by the hover glow, which otherwise has no
+-- way to find a button it did not create.
+local hosted = {}
+
+--- A host saying "this button is drawing this slot, as of now".
+function BW.RegisterHostedButton(bag, slot, button)
+    hosted[bag] = hosted[bag] or {}
+    hosted[bag][slot] = button
+end
+
+--- The button drawing one slot, or nil.
+--- Verified rather than trusted: these buttons are pooled, so an entry filed under a slot may
+--- since have been moved onto another one, and a stale answer is worse than none - it would put
+--- the red "about to be deleted" glow on the wrong item.
+function BW.HostedButton(bag, slot)
+    local button = hosted[bag] and hosted[bag][slot]
+    if not button then return nil end
+    if button.bagWardenBag ~= bag or button.bagWardenSlot ~= slot then return nil end
+    if button.IsShown and not button:IsShown() then return nil end
+    return button
+end
+
+--- Re-decide the coin on every button a bag addon has told us about.
+---
+--- Needed because a host may only tell us about buttons that HAVE an item - GudaBags says so
+--- outright - so nothing ever tells us a slot emptied. Without this, selling a scrapped stack
+--- left its coin behind on an empty slot.
+---
+--- Each button is read through its OWN current bag and slot, not the key it was filed under: the
+--- buttons are pooled, so the key can be stale while the button's own fields are true.
+function BW.RefreshHostedCoins()
+    for _, slots in pairs(hosted) do
+        for _, button in pairs(slots) do
+            local bag, slot = button.bagWardenBag, button.bagWardenSlot
+            local info = bag and slot and C_Container.GetContainerItemInfo(bag, slot)
+            BW.ScrapCoin(button, info and info.itemID and BW.IsScrap(info.itemID))
+        end
+    end
+end
+
 --- Put a coin on every scrapped stack on screen, and take it off the rest. Cheap: it reads the
 --- slot's item id and shows or hides one texture, with no scan and no tooltip.
 function BW.MarkScrap()
@@ -185,6 +236,8 @@ function BW.MarkScrap()
             end)
         end
     end
+    -- And the buttons a bag addon owns, which this walk cannot reach.
+    BW.RefreshHostedCoins()
 end
 
 --- How many items are on the list, and what they are worth to sell - for the settings page.
@@ -259,14 +312,30 @@ f:SetScript("OnEvent", function(_, event)
     if event == "BAG_UPDATE_DELAYED" then
         -- Items move: a sort, a stack merging, a slot emptying. The coins belong to slots, not to
         -- items, so they have to be redrawn whenever what is in a slot changes.
-        BW.MarkScrap()
+        --
+        -- And the BUTTONS are re-hooked here too, not only when a bag window opens. A bag addon
+        -- that has replaced Blizzard's bags builds its buttons when it lays out, which is after
+        -- the moment the window was asked to open - so hooking only on open walked an empty list
+        -- and never looked again. Hooking is idempotent (one flag per button), so the cost of
+        -- running it again is a boolean test per button that already has one.
+        BW.HookScrapClicks()
         return
     end
     -- The same four entry points the bag button uses, so a button is hooked the first time its
     -- window appears rather than one click later.
+    --
+    -- Each one runs the hook TWICE: once now, and once on the next frame. These fire when a window
+    -- is asked to open, and a bag addon has not built its buttons by then - the immediate call
+    -- catches Blizzard's bags, which exist already, and the deferred one catches everything that
+    -- is built in response.
     for _, hook in ipairs({ "ToggleAllBags", "OpenAllBags", "OpenBackpack", "ContainerFrame_OnShow" }) do
         if type(_G[hook]) == "function" then
-            hooksecurefunc(hook, function() BW.HookScrapClicks() end)
+            hooksecurefunc(hook, function()
+                BW.HookScrapClicks()
+                if C_Timer and C_Timer.After then
+                    C_Timer.After(0, function() BW.HookScrapClicks() end)
+                end
+            end)
         end
     end
     BW.HookScrapClicks()
