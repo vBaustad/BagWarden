@@ -289,6 +289,50 @@ function BW.ScrapStore()
     return BW.cdb.scrap
 end
 
+-- ---------------------------------------------------------------------------
+-- The old account-wide scrap list
+-- ---------------------------------------------------------------------------
+-- Frozen. Nothing has written to BagWardenDB.scrap since the list moved per character; it survives
+-- only so a character can take it deliberately.
+--
+-- It used to be copied onto every character on their first login, which protected the decisions a
+-- veteran had made and quietly handed them to a level 1 rolled afterwards - whose starting gear
+-- and low-level water then matched item ids somebody else had marked, permanently, because the
+-- import ran once and set a flag. The list says "this character has no use for this". A character
+-- who has never seen the item has not said that.
+
+--- How many standing marks the old list still holds, or 0.
+--- One-shots are not counted and never were: a one-shot was about a stack in a particular bag.
+function BW.LegacyScrapCount()
+    local n = 0
+    for _, how in pairs(BagWardenDB and BagWardenDB.scrap or {}) do
+        if how == true then n = n + 1 end
+    end
+    return n
+end
+
+--- Is there an old list this character has not dealt with yet?
+function BW.LegacyScrapOffered()
+    return BW.cdb ~= nil and not BW.cdb.imported and BW.LegacyScrapCount() > 0
+end
+
+--- Take the old list onto this character, or decline it. Either way it is not offered again.
+--- Existing marks win: this adds, and never overwrites a one-shot the player has just made.
+function BW.ImportLegacyScrap(take)
+    if not BW.cdb then return 0 end
+    BW.cdb.imported = true
+    if not take then return 0 end
+    local store, added = BW.ScrapStore(), 0
+    for itemID, how in pairs(BagWardenDB and BagWardenDB.scrap or {}) do
+        if how == true and store[itemID] == nil then
+            store[itemID] = true
+            added = added + 1
+        end
+    end
+    if BW.Refresh then BW.Refresh() end
+    return added
+end
+
 function BW.IsScrap(itemID)
     local store = BW.ScrapStore()
     return (itemID ~= nil and store and store[itemID]) and true or false
@@ -423,17 +467,8 @@ f:SetScript("OnEvent", function(_, event, arg1)
         BagWardenCharDB = BagWardenCharDB or {}
         BW.cdb = LIB.PrepareDB(BagWardenCharDB, charDefaults, nil, 1)
 
-        -- Carried over once, the first time each character logs in after the move. STANDING marks
-        -- only: a one-shot was always about a particular stack in a particular bag, so inheriting
-        -- somebody else's is the exact mistake this change is undoing. Nobody loses a durable
-        -- decision; everybody stops sharing a transient one.
-        if not BW.cdb.imported then
-            BW.cdb.imported = true
-            local store = BW.ScrapStore()
-            for itemID, how in pairs(BagWardenDB.scrap or {}) do
-                if how == true and store[itemID] == nil then store[itemID] = true end
-            end
-        end
+        -- Nothing is carried over automatically. See BW.ImportLegacyScrap below: the old
+        -- account-wide list is offered to a character, never applied to one.
     elseif event == "PLAYER_LOGIN" then
         BW.RegisterOptions()
         BW.RegisterMinimap()

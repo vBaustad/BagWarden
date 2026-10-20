@@ -1,5 +1,21 @@
 # BagWarden
 
+## 0.1.0-beta9
+
+- **A new character no longer inherits anything on the scrap list.** beta7 moved these lists per
+  character and then copied the old shared one onto every character at their first login. That
+  protected decisions already made and quietly handed them to a level 1 rolled afterwards: the
+  list is keyed by item id, so a veteran's "always sell this" landed on the new character's
+  starting gear and their low-level water. It was permanent, too - the copy ran once and set a
+  flag, so the wrong list could not be re-decided.
+- **The old list is offered now, not applied.** While it still holds something, the settings page
+  asks once, with "Bring it in" and "No thanks". Either answer ends the offer, because a prompt
+  that returns every time you open the settings is not an offer.
+- A character who already took the list keeps it. If that character got marks it should never
+  have had, "Empty the list" in the scrap window is the way out, and it was always there.
+- One-shot marks are never brought across even when you ask for the list. A one-shot was always
+  about one stack in one bag.
+
 ## 0.1.0-beta8
 
 - **A scrapped item's coin stayed behind on the empty slot** after the stack was sold or moved, in

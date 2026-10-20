@@ -443,6 +443,44 @@ function BW.RegisterOptions()
             .. "off."):format(key, key)
     end
 
+    -- The old account-wide list, offered rather than applied. Both buttons answer the offer, so
+    -- it stops appearing either way - a prompt that returns every time you open the settings is
+    -- not an offer, it is nagging.
+    local legacyRow = Row("", nil)
+    legacyRow:EnableMouse(false)
+    local legacyText = legacyRow:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    legacyText:SetPoint("LEFT", legacyRow, "LEFT", LEFT + 4, 0)
+    legacyText:SetJustifyH("LEFT")
+
+    local legacyTake = CreateFrame("Button", nil, legacyRow, "UIPanelButtonTemplate")
+    legacyTake:SetSize(90, 20)
+    legacyTake:SetPoint("LEFT", legacyRow, "LEFT", CONTROL_X + 70, 0)
+    legacyTake:SetText("Bring it in")
+    local legacyDrop = CreateFrame("Button", nil, legacyRow, "UIPanelButtonTemplate")
+    legacyDrop:SetSize(90, 20)
+    legacyDrop:SetPoint("LEFT", legacyTake, "RIGHT", 4, 0)
+    legacyDrop:SetText("No thanks")
+
+    legacyRow.Sync = function()
+        local offered = BW.LegacyScrapOffered and BW.LegacyScrapOffered()
+        legacyRow:SetShown(offered and true or false)
+        legacyRow:SetHeight(offered and ROW_H or 1)
+        if offered then
+            legacyText:SetText(("You have an older scrap list of %d items, from before these "
+                .. "lists belonged to a character."):format(BW.LegacyScrapCount()))
+        end
+    end
+    legacyTake:SetScript("OnClick", function()
+        local n = BW.ImportLegacyScrap(true)
+        BW.Print("brought %d %s onto this character's scrap list.", n,
+            n == 1 and "item" or "items")
+        if panel.OnRefresh then panel.OnRefresh() end
+    end)
+    legacyDrop:SetScript("OnClick", function()
+        BW.ImportLegacyScrap(false)
+        if panel.OnRefresh then panel.OnRefresh() end
+    end)
+
     local scrapButton = ListButton("Scrap list", function()
         local n = 0
         for _ in pairs(BW.ScrapStore() or {}) do n = n + 1 end
@@ -717,6 +755,7 @@ function BW.RegisterOptions()
         -- Every list button, in one loop. Four lists that each refreshed themselves in their
         -- own two lines here is how the old inline versions drifted apart.
         for _, row in ipairs(listButtons) do row.Sync() end
+        legacyRow.Sync()
         sell.check:SetChecked(BW.db.sellGreys)
         search.check:SetChecked(BW.db.smallSearch)
         barOn.check:SetChecked(BW.db.barEnabled)
