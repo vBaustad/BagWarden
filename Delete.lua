@@ -67,8 +67,8 @@ function BW.VerifyTarget(entry)
     return fresh
 end
 
--- White items are never deleted on a plain click: they ask first. The popup's own button click is
--- the player's click, which is what the client needs for a delete.
+-- A soft keep is never deleted on a plain click: it asks first. The popup's own button click is the
+-- player's click, which is what the client needs for a delete.
 StaticPopupDialogs["BAGWARDEN_CONFIRM_DELETE"] = {
     text = "Delete %s?\n\n%s",
     button1 = DELETE or "Delete",

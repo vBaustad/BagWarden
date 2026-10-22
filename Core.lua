@@ -106,6 +106,12 @@ local migrations = {
     -- already reached 4 under the old migration would silently skip a future migration 4 if this
     -- went back to 3, and the files that reached it belong to whoever runs the dev build - the one
     -- person whose saved variables we most need to be right.
+
+    -- 5: the learned quest list held rewards beside turn-ins, and every quest-log objective under a
+    -- "3/8 name" key that no item could match. BW.CleanLearned (Quests.lua) says what survives.
+    [5] = function(db)
+        db.learned = BW.CleanLearned(db.learned)
+    end,
 }
 
 BW.lootSeen = {}            -- [itemID] = time() when we last gained one
@@ -455,12 +461,11 @@ f:RegisterEvent("QUEST_ACCEPTED")
 f:RegisterEvent("QUEST_REMOVED")
 f:RegisterEvent("QUEST_DETAIL")
 f:RegisterEvent("QUEST_PROGRESS")
-f:RegisterEvent("QUEST_COMPLETE")
 f:SetScript("OnEvent", function(_, event, arg1)
     if event == "ADDON_LOADED" then
         if arg1 ~= ADDON then return end
         BagWardenDB = BagWardenDB or {}
-        BW.db = LIB.PrepareDB(BagWardenDB, defaults, migrations, 4)
+        BW.db = LIB.PrepareDB(BagWardenDB, defaults, migrations, 5)
 
         -- Per character: the scrap list, and nothing else. Settings stay account-wide, which is
         -- how the five sibling addons split theirs too.
@@ -490,7 +495,7 @@ f:SetScript("OnEvent", function(_, event, arg1)
     elseif event == "QUEST_LOG_UPDATE" or event == "QUEST_ACCEPTED" or event == "QUEST_REMOVED" then
         BW.ScanQuestLog()
         BW.Refresh()
-    elseif event == "QUEST_DETAIL" or event == "QUEST_PROGRESS" or event == "QUEST_COMPLETE" then
+    elseif event == "QUEST_DETAIL" or event == "QUEST_PROGRESS" then
         -- A quest giver is open: learn what this quest wants, even if we never accept it.
         BW.LearnFromQuestFrame(event)
     end

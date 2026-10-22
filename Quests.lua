@@ -49,11 +49,13 @@ function BW.IsSeededQuestItem(itemID)
     return itemID ~= nil and SEED_IDS[itemID] == true
 end
 
---- "Tough Wolf Meat: 3/8" -> "tough wolf meat". Objective text always ends in the counter, in every
---- locale, so only that tail is cut; nothing else is guessed from the text.
-local function ObjectiveName(text)
+--- "3/8 Tough Wolf Meat" -> "tough wolf meat". Forever puts the counter IN FRONT: every one of the
+--- 698 objective keys in the dev account's saved file read "N/M name" and none had it at the end,
+--- because the old pattern only cut a tail and so never matched once. The live quest-log keep could
+--- not fire at all. A counter at the end is still cut too; only the counter is ever removed.
+function BW.ObjectiveName(text)
     if type(text) ~= "string" then return nil end
-    local name = text:gsub("%s*:?%s*%d+%s*/%s*%d+%s*$", "")
+    local name = text:gsub("^%s*%d+%s*/%s*%d+%s*", ""):gsub("%s*:?%s*%d+%s*/%s*%d+%s*$", "")
     return BW.NameKey(name)
 end
 
@@ -105,7 +107,7 @@ function BW.ScanQuestLog()
                 if type(objectives) == "table" then
                     for _, objective in ipairs(objectives) do
                         if objective and (objective.type == "item" or objective.objectiveType == "item") then
-                            local key = ObjectiveName(objective.text)
+                            local key = BW.ObjectiveName(objective.text)
                             if key then
                                 wanted[key] = title
                                 BW.Learn(key, title)
@@ -130,8 +132,9 @@ end
 -- ---------------------------------------------------------------------------
 -- Learning from an open quest giver
 -- ---------------------------------------------------------------------------
---- QUEST_DETAIL (a quest we are only reading), QUEST_PROGRESS (what it wants from us) and
---- QUEST_COMPLETE (the rewards). Everything seen here goes into the learned list.
+--- QUEST_DETAIL (a quest we are only reading) and QUEST_PROGRESS (what it wants from us). Only what
+--- a quest ASKS for is learned. Rewards were learned here too before schema 5, from QUEST_COMPLETE,
+--- so a cape a quest had handed you was kept as "used by: The Enchanted Glade".
 function BW.LearnFromQuestFrame(event)
     local title = GetTitleText and GetTitleText() or nil
     if event == "QUEST_PROGRESS" then
@@ -147,14 +150,26 @@ function BW.LearnFromQuestFrame(event)
             local name = GetQuestItemInfo and GetQuestItemInfo("required", i)
             if name then BW.Learn(name, title) end
         end
-    elseif event == "QUEST_COMPLETE" then
-        for i = 1, (GetNumQuestChoices and GetNumQuestChoices() or 0) do
-            local name = GetQuestItemInfo and GetQuestItemInfo("choice", i)
-            if name then BW.Learn(name, title) end
-        end
-        for i = 1, (GetNumQuestRewards and GetNumQuestRewards() or 0) do
-            local name = GetQuestItemInfo and GetQuestItemInfo("reward", i)
-            if name then BW.Learn(name, title) end
+    end
+end
+
+--- The learned list as saved before schema 5, reduced to what a quest really asked for. Run once, by
+--- the schema 5 migration in Core.lua. Two faults wrote it, and the file cannot be fixed row by row:
+---   * every quest-log objective was stored under "3/8 tough wolf meat" (see BW.ObjectiveName), a key
+---     no item name can ever match. Those rows are the one source we can trust - each came from an
+---     item objective in a quest log - so they are KEPT, under the name with the counter cut off;
+---   * rewards were stored beside what quest windows asked for, both as a bare name and a title, so
+---     nothing in a row says which it was. All bare rows go. Measured on the dev account: of 362, 128
+---     repeat an objective and come back from the rule above, 64 are quest items whose own flags keep
+---     them anyway, 141 are armour, weapons, consumables and recipes - the rewards - and the rest are
+---     mostly library books, which the next quest window that asks for one teaches again.
+function BW.CleanLearned(learned)
+    local out = {}
+    for key, title in pairs(learned or {}) do
+        if type(key) == "string" and key:match("^%s*%d+%s*/%s*%d+%s") then
+            local name = BW.ObjectiveName(key)
+            if name and out[name] == nil then out[name] = title end
         end
     end
+    return out
 end

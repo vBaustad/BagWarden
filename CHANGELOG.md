@@ -1,5 +1,24 @@
 # BagWarden
 
+## 0.1.0-beta10
+
+- **An item a quest in your log asks for is now really kept.** Forever writes an objective as
+  "3/8 Boar Intestines", counter first, and BagWarden only knew how to cut a counter off the end.
+  So the name did not match, and the rule meant for plain trade goods with no quest tag - keep it
+  while the quest is in your log, and say "needed for" that quest - could not fire for them. Such
+  an item could be picked like any other; at most BagWarden asked first, for some other reason - a
+  reagent, say, or a quest window having mentioned it before.
+- **Quest rewards no longer say "used by" the quest that gave them.** BagWarden learns what quests
+  want from the quest giver's window, and on the hand-in page it read the rewards too, so a cape a
+  quest had just given you asked before it went, labelled as something that quest uses. Only what
+  a quest asks you to bring is learned now.
+- **The remembered quest list is cleaned once**, the first time this version loads. Everything
+  learned from a quest log stays, under the item's real name, and some of it works for the first
+  time because it was only ever stored with the counter. What was learned from quest windows is
+  dropped, because the rewards were mixed in with it and nothing in the saved list says which was
+  which. Those items are learned again the next time a quest window asks for one - mostly library
+  books, since quest items are kept by their own tag anyway.
+
 ## 0.1.0-beta9
 
 - **A new character no longer inherits anything on the scrap list.** beta7 moved these lists per
